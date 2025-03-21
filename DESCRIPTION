@@ -1,0 +1,10 @@
+Package: hlebuhanec.0325
+Title: 
+Version: 0.1.0
+Authors@R: 
+    person("Etienne", "Camenen", , "etienne.camenen@gmail.com", role = c("aut", "cre"))
+Description: 
+License: GPL-3
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.2.3
