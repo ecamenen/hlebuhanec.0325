@@ -1,0 +1,174 @@
+---
+title: "PCA_cyto"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{PCA_cyto}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+set.seed(1234)
+library(hlebuhanec.0325)
+library(readxl)
+library(factoextra)
+library(FactoMineR)
+
+colPers <- c("blue", "grey", "red")
+```
+
+```{r}
+data("cytometry")
+data("cytometry_group")
+cytometry <- cytometry %>% filter(!rownames(.) %in% c("P00.2", "P11.5"))
+```
+
+
+## Analysis
+```{r}
+res_pca <- PCA(cytometry, scale.unit = TRUE, ncp = 4, graph = FALSE)
+use_data(res_pca)
+```
+
+## Explained variance per dimension
+```{r}
+eigenval <- res_pca$eig[, 1]
+eig_pct <- eigenval %>% divide_by(sum(.)) %>% multiply_by(100)
+plot_eig(eig_pct, "mean") + plot_eig(eig_pct, "cum")
+
+cumsum(eig_pct)[seq(4)]
+```
+
+## Sample plot
+```{r}
+library(corrplot)
+corrplot(
+  t(res_pca$ind$coord),
+  is.corr = FALSE,
+  col = colorRampPalette(c(rev(brewer.pal(3, "Blues")), "grey", brewer.pal(3, "Reds")))(100)
+)
+
+p <- plot_ctr(res_pca)
+p[[1]] / p[[2]]
+p[[3]] / p[[4]]
+
+fviz_pca_ind(
+    res_pca,
+    label = "none",
+    axes = c(1, 2),
+    habillage = cytometry_group,
+    palette = GimmeMyPlot:::palette_discrete(),
+    addEllipses = TRUE, 
+    ellipse.type = "confidence",
+    ggtheme = theme_minimal()
+) %>% theme_perso_2D() +
+  ggtitle(NULL)
+
+fviz_pca_ind(
+    res_pca,
+    col.ind = "contrib",
+    axes = c(1, 2),
+    gradient.cols = colPers,
+    repel = TRUE,
+    ggtheme = theme_minimal()
+) %>% theme_perso_2D() + 
+  labs(colour = "Contribution") +
+  ggtitle(NULL)
+```
+
+## Variable plots
+```{r}
+fviz_cos2(res_pca, choice = "var", fill = "black", axes = 1:2, top = 10, xtickslab.rt = 0) + GimmeMyPlot:::theme_custom() + coord_flip() + labs(x = NULL)
+
+p <- plot_ctr(res_pca, type = "var", top = 25)
+p[[1]] / p[[2]]
+p[[3]] / p[[4]]
+
+ctr <- get_ctr(res_pca) %>% lapply(function(x) head(x, 15) %>% names())
+axes <- 1:2
+fviz_pca_var(
+    res_pca,
+    axes = axes,
+    col.var = "contrib",
+    repel = TRUE,
+    gradient.cols = colPers,
+    # select.var = list(contrib = 20)
+    select.var = list(name = unlist(ctr[axes]))
+) %>% theme_perso_2D() + 
+  labs(colour = "Contribution") +
+  ggtitle(NULL)
+```
+
+## Biplot
+```{r}
+# Integrative
+axes <- 1:2
+fviz_pca_biplot(
+    res_pca,
+    axes = axes,
+    repel = TRUE,
+    col.var = "gray50",
+    col.ind = "gray50",
+    # col.ind = as.character(cls[-15, 2]),
+    # alpha.var = "cos2",
+    # palette = c(colors_k, "red"),
+    # legend.title = "Clusters",
+    # pointsize = "cos2",
+    mean.point = FALSE,
+    palette = GimmeMyPlot:::palette_discrete(),
+    addEllipses = TRUE, 
+    ellipse.type = "confidence",
+    habillage = cytometry_group,
+    select.var = list(name = unlist(ctr[axes]))
+) %>% theme_perso_2D() +
+    ggtitle(NULL)
+```
+
+## Multigroup
+```{r}
+ctr <- get_ctr(res_pca) %>% lapply(function(x) head(x, 20) %>% names())
+vars <- ctr[[4]] %>% head(12)
+
+cytometry2 <- mutate(X_raw, Group = Y_raw)
+
+stats <- list.map(
+  vars,
+  f(x) ~ cytometry2 %>%
+    group_by(Group) %>%
+    summarise(n = sum(!is.na(!!sym(x)))) %>%
+    set_colnames(c("Group", x))
+) %>% Reduce(function(x, y) left_join(x, y, by = "Group"), .)
+
+stats %>%
+    select(where(~ any(.x == 0)))
+
+p <- list.map(
+  vars,
+  f(x) ~ {
+    cytometry2 %>%
+    select(x, Group) %>%
+    mutate(ID = rownames(.)) %>%
+    pivot_wider(names_from = Group, values_from = !!sym(x)) %>%
+    column_to_rownames("ID") %>%
+    plot_violin(
+      colour = colGrp,
+      # breaks = c(25, 50, 75),
+      label = TRUE,
+      title = format_cytometry(x),
+      digits = 2,
+      width_title = 30
+      
+    )
+  }
+)
+
+x11()
+plot_grid(plotlist  = p[seq(12)], ncol = 4, align = "hv")
+```

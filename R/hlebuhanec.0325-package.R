@@ -1,3 +1,4 @@
+#' @import GimmeMyPlot GimmeMyStats
 #' @keywords internal
 "_PACKAGE"
 

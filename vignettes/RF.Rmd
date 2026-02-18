@@ -1,0 +1,466 @@
+---
+title: "RF"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{RF}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+set.seed(1234)
+library("caret")
+library("plotROC")
+library("pROC")
+library("randomForest")
+library("patchwork")
+library("yardstick")
+library("janitor")
+to_remove <- NULL
+```
+
+```{r, eval = FALSE}
+data("cytometry")
+data("cytometry_group")
+X_raw <- cytometry
+Y_raw <- cytometry_group
+```
+
+```{r, eval = FALSE}
+data("cytometry_ER")
+data("ER_timepoint")
+X_raw <- cytometry_ER
+Y_raw <- ER_timepoint
+```
+
+```{r, eval = FALSE}
+data("clinic")
+data("cytometry")
+# clinic <- filter(clinic, !is.na(`Date inclusion`))
+# clinic <- filter(clinic, Group == "ER")
+# clinic <- filter(clinic, !is.na(`Days alive since inclusion`))
+# var <- "Days alive since inclusion"
+var <- "Is the patient alive and in CR at the time of last follow-up ?"
+
+X_raw0 <- left_join(
+  rownames_to_column(clinic),
+  rownames_to_column(cytometry),
+  by = "rowname"
+) %>% column_to_rownames("rowname")
+
+X_raw0 <- X_raw0 %>% filter(!is.na(!!sym(var)))
+
+Y_raw <- X_raw0 %>%
+  pull(var)
+
+X_raw <- select(X_raw0, -all_of(colnames(clinic)))
+```
+
+```{r}
+data("cytometry_fr")
+X_raw <- cytometry_fr # %>% remove_empty() # %>% filter(!str_detect(rownames(.), "100.2"))
+Y2 <- rownames(X_raw) %>% str_remove_all("\\..*") %>% as.factor()
+Y_raw <- rownames(X_raw) %>% str_remove_all("\\..*") %>% str_replace_all("365", "730") %>% str_replace_all("730", "365-730") %>% as.factor()
+```
+
+## Data preparation
+```{r, eval = FALSE}
+Y_raw %>%
+  fct_count() %>%  
+  set_colnames(c("Status", "N")) %>%
+  kable0()
+
+X2 <- mutate(X_raw, Group = Y_raw)
+stats <- list.map(
+  colnames(X_raw),
+  f(x) ~ X2 %>%
+    group_by(Group) %>%
+    summarise(n = sum(!is.na(!!sym(x)))) %>%
+    set_colnames(c("Group", x))
+) %>% Reduce(function(x, y) left_join(x, y, by = "Group"), .)
+
+lim <- 3
+to_remove <- stats %>%
+    select(where(is.numeric)) %>%            
+    select(where(~ any(.x <= lim))) %>%
+    names()
+
+t_na <- stats %>%
+    select(where(is.numeric)) %>%            
+    select(where(~ any(.x <= lim))) %>% 
+    mutate(Group = levels(Y_raw)) %>%
+    relocate(Group)
+kable0(t_na)
+
+t_na %>% 
+  select(-1) %>%
+  slice(2) %>% 
+  unlist() %>% 
+  subtract(
+    fct_count(Y_raw) %>% select(2) %>% slice(2) %>% unlist(),
+    .) %>%
+  as.factor() %>%
+  fct_count() %>%
+  set_colnames(c("# NA", "N")) %>%
+  kable0()
+
+# library(naniar)
+vis_miss(X_raw) +
+  labs(x = NULL, y = NULL)  +
+  theme_minimal() + 
+  theme(
+    axis.text = element_blank(),
+    panel.grid.major = element_blank())
+
+l_X_raw <- list.map(
+    levels(Y_raw),
+    ~which(Y_raw == .) %>%
+        X_raw[., ]
+)
+list.map(
+    levels(Y_raw),
+    ~which(Y_raw == .) %>%
+        rownames(X_raw)[.]
+)
+list.map(
+    levels(Y_raw),
+    ~which(Y_raw == .) %>%
+        rownames(X_raw)[.]
+) %>% pluck(2) %>% paste(collapse = ", ")
+vis_miss(l_X_raw[[1]]) +
+    labs(x = NULL, y = NULL)  +
+    theme_minimal() + theme(panel.grid.major = element_blank(), axis.text = element_blank()) + ggtitle(names(l_X_raw)[1])
+```
+
+## Modelling
+```{r}
+# "P11.14" "P11.19" "P11.44"
+ntree <- 1e4
+X <- select(X_raw, -to_remove) %>%
+  remove_empty(which = "cols") %>%
+  na.roughfix()
+Y <- Y_raw
+if(is(Y, "numeric")) {
+  Y[is.na(Y)] <- 6e
+}
+# Y <- log1p(Y_raw)
+
+class_weights <- calculate_class_weights(Y)
+```
+
+
+```{r, eval = FALSE}
+rf <- randomForest(
+  X,
+  Y,
+  importance = TRUE,
+  proximity = TRUE,
+  ntree = ntree,
+  do.trace = round(ntree/10),
+  # classwt = class_weights,
+  strata = Y,
+  sampsize = rep(min(table(Y)), length(class_weights))
+)
+# use_data(rf)
+```
+```{r, eval = FALSE}
+pbapply::pboptions(type = "timer")
+n_cores <- parallel::detectCores() - 2
+n_run <- 1e3
+n_tree <- 1e3
+
+list_pars <- c("X", "Y", "list.map", "%>%", "n_tree", "n_run", "confusionMatrix", "randomForest", "createDataPartition")
+cl <- parallel::makeCluster(n_cores)
+parallel::clusterExport(cl, list_pars, envir = environment())
+
+mrf <-  pbapply::pblapply(
+  seq(n_run), 
+  function(x) {
+    
+    if (!is.numeric(Y)) {
+      Y2 <- Y
+    } else {
+      Y2 <- Y %>% 
+        cut(
+            breaks = quantile(., probs = seq(0, 1, 0.2)) %>% 
+                unique(),
+            include.lowest = TRUE
+        )
+    }
+      l_inds <- createDataPartition(Y2, p = 2/3) %>% unlist() %>% unname()
+      
+      rf_train <- randomForest(
+        X[l_inds, ], 
+        Y[l_inds],
+        importance = TRUE,
+        proximity = TRUE,
+        ntree = n_tree
+      )
+      
+      pred_train <- predict(rf_train, X[l_inds, ], type = "prob") %>% 
+        .[, pos]
+      pred_test <- predict(cv_train, X[-l_inds, ], type = "prob") %>% 
+        .[, pos]
+      
+      if (!is.numeric(Y)) {
+        conf_train <- confusionMatrix(predict(rf_train, X[l_inds, ]), Y[l_inds], positive = pos)
+        conf_test <- confusionMatrix(predict(rf_train, X[-l_inds, ]), Y[-l_inds], positive = pos)
+      } else {
+        conf_train <- NULL
+        conf_test <- NULL
+      }
+        
+      return(list(rf_train, pred_train, conf_train, pred_test, conf_test))
+    },
+  cl = cl
+  )
+if(!is.null(cl))
+  parallel::stopCluster(cl)
+
+```
+
+## Error rate
+```{r}
+if (rf$type == "classification") {
+  quality_index <- rf$err.rate[, 1]
+  ylab <- "erreur OOB"
+} else {
+  quality_index <- rf$rsq
+  ylab <- "(pseudo) R-squared errors"
+}
+plot(
+  quality_index,
+  type = "l",
+  xlab = "# of tree",
+  ylab = ylab,
+  col = "#E41A1C"
+)
+```
+
+## Model evaluation
+### Regression
+```{r}
+predicted <- rf$predicted
+func <- identity
+# func <- function(x) exp(x) - 1
+results <- data.frame(
+  truth = func(Y),
+  estimate = func(unlist(predicted))
+) 
+l_metrics <- metric_set(rmse, mae, rsq, mape)
+l_metrics(results, truth = truth, estimate = estimate) %>%
+    select(-`.estimator`) %>%
+    set_colnames(c("Metric", "Estimate")) %>%
+    mutate(Metric = toupper(Metric)) %>%
+    mutate(`%` = Estimate / max(Y, na.rm = TRUE) * 100) %>%
+kable0(digits = 3)
+range(Y)
+```
+
+```{r}
+p <- list()
+p[[1]] <- ggplot(results, aes(x = truth, y = estimate)) +
+    geom_point(alpha = 0.6) +
+    geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+    labs(
+      title = NULL,
+      x = "Ground truth",
+      y = "Predictions"
+    ) +
+    ylim(0, NA) +
+    theme_minimal() +
+  GimmeMyPlot:::theme_custom()
+
+residuals <- func(Y) - func(unlist(predicted))
+results2 <- data.frame(
+  estimate = func(Y),
+  residuals = residuals
+)
+
+p[[2]] <- ggplot(results2, aes(x = estimate, y = residuals)) +
+  geom_point(alpha = 0.6) +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  labs(
+    title = NULL,
+    x = "Predictions",
+    y = "Error (residuals)"
+  ) +
+  theme_minimal() +
+  GimmeMyPlot:::theme_custom()
+
+p[[3]]  <- ggplot(results2, aes(x = residuals)) +
+  geom_histogram(bins = 30, fill = "black", color = "white") +
+  labs(
+    title = NULL,
+    x = "Error (residuals)",
+    y = "Frequency"
+  ) +
+  theme_minimal() +
+  GimmeMyPlot:::theme_custom()
+
+p[[4]] <- ggplot(results2, aes(sample = residuals)) +
+  stat_qq(alpha = 0.6, color = "black") +
+  stat_qq_line(color = "red", linetype = "dashed", linewidth = .7) +
+  labs(
+    title = "Q-Q plot",
+    x = "Theory (normal quantiles)",
+    y = "Observed residuals"
+  ) +
+  theme_minimal()+
+  GimmeMyPlot:::theme_custom()
+
+plot_grid(plotlist = p, ncol = 2, align = "hv")
+```
+
+### Classification
+```{r}
+rf$confusion
+conf <- confusionMatrix(rf$predicted, Y)
+
+plot_auc_classes(rf$votes, Y) %>%
+  plot_grid(plotlist = ., ncol = 2, align = "hv")
+```
+
+
+```{r}
+print_conf(conf)
+
+conf$overall[seq(2)] %>% round(2)
+
+kable_class(conf)
+```
+
+## Missclassified
+### Regression
+```{r}
+plot_bar(
+    residuals,
+    cex = 0.8,
+    sample_size = max(Y, na.rm = TRUE),
+    # label_x = "value",
+    n_max = 15,
+    colour = c("#99000D", "gray"),
+    title = "Error between observed and predicted values",
+    sort ="asc",
+    abs = TRUE
+)
+```
+
+### Classification
+```{r}
+plot_probs(rf$votes, Y) %>%
+  plot_grid(plotlist = ., ncol = 2, align = "hv")
+
+list.map(
+  rf$classes,
+  f(x) ~rf$predicted[which(rf$y == x)] %>% .[. != x]
+)
+```
+
+## Top predictors
+```{r}
+varImpPlot(
+   rf,
+   sort = TRUE,
+   n.var = 10,
+   main = "Variable Importance (Top 10)"
+ )
+
+if (rf$type == "classification") {
+  type1 <- "MeanDecreaseGini"
+  type2 <- "MeanDecreaseAccuracy"
+} else {
+  type1 <- "%IncMSE"
+  type2 <- "IncNodePurity"
+}
+
+plot_ctr_rf(rf, type1, width_text = 35, colour_text = "black", digits = 1, cex = 0.6) + 
+    plot_ctr_rf(rf, type2, width_text = 35, colour_text = "black", digits = 0, cex = 0.6) #+ scale_y_continuous(breaks = c(0, 1e5, 2e5))
+
+vars <- importance(rf)[, type2] %>% sort(decreasing = TRUE) %>% head(20) %>% names()
+```
+
+```{r}
+list.map(rf$classes, f(i) ~plot_ctr_rf(rf, i, 100)) %>% 
+  plot_grid(plotlist = ., ncol = 2, align = "hv")
+
+vars <- list.map(
+  rf$classes,
+  f(i) ~importance(rf)[, i] %>% sort(decreasing = TRUE) %>% head(20) %>% names()
+)
+
+plot_venn(vars, color_gradient = "white")  + 
+    theme(legend.position = "none")
+```
+
+## Partial plot
+```{r, eval = FALSE}
+plot_partial(rf, X, "Q3Tconv / CD3 (Tconv / CD4)", "ER")
+
+plot_partial <- function(rf, data, var, class) {
+  pd_data <-partialPlot(
+      x = rf, 
+      pred.data = data, 
+      x.var = var,
+      which.class = class,
+      plot = FALSE
+  )
+  
+  as.data.frame(pd_data) %>%
+    ggplot(aes(x = x, y = y)) +
+      geom_line(color = "red", linewidth = 1) +
+      labs(
+        title = paste("Partial dependancy:", var, "for the class", class),
+        x = var,
+        y = paste("Logit probability for", class)
+      )  +
+      theme_minimal() + 
+      GimmeMyPlot:::theme_custom()
+}
+```
+
+## Common variables between models
+```{r}
+plot_venn(list(PCA = ctr_pca[[1]], PLS = ctr_pls[[1]], RF = vars$HS), color_gradient = "white")  + 
+    theme(legend.position = "none")
+```
+
+```{r}
+p <- list.map(
+    cor_var[[1]],
+    f(x) ~plot_cor(Y, pull(X_raw, x), method = "pearson") +
+        labs(title = str_wrap(x, 30), x = "Days alive", y = NULL) +
+        GimmeMyPlot:::theme_custom()
+)
+plot_grid(plotlist = p[seq(12)], ncol = 4, nrow = 3, align = "hv")
+```
+
+```{r}
+p <- list.map(
+  vars[seq(12)], 
+  f(x) ~ X_raw0 %>%
+  mutate(temp = !!sym(x)) %>%
+  select(`Is the patient alive ?`, temp) %>%
+  mutate(ID = rownames(.)) %>%
+  filter(!is.na(temp)) %>%
+  pivot_wider(names_from = `Is the patient alive ?`, values_from = temp) %>%
+  column_to_rownames("ID") %>%
+  plot_violin(
+    colour = GimmeMyPlot:::palette_discrete()[seq(2)],
+    # breaks = c(3*30, 365, 4*365, 12*365),
+    # label = TRUE,
+    title = x,
+    # display_log = TRUE,
+    method = "wilcox",
+    width_title = 30
+  )
+)
+```
+

@@ -45,13 +45,8 @@ for (f in c(".idea/", "dev/", "inst/extdata/")) {
 use_testthat()
 use_spell_check()
 for (p in c(
-    "tidyverse",
-    "dplyr",
-    "ggplot2",
-    "readr",
-    "data.table",
-    "ggpubr",
-    "rstatix"
+    "GimmeMyPlot",
+    "GimmeMyStats"
 )) {
     use_package(p)
 }

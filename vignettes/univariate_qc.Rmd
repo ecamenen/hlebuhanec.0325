@@ -1,0 +1,858 @@
+---
+title: "univariate_qc"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{univariate_qc}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+## Setup
+```{r, eval = FALSE}
+library(hlebuhanec.0325)
+library(readxl)
+library(janitor)
+library(magrittr)
+library(GimmeMyPlot)
+library(GimmeMyStats)
+library(ggalluvial)
+library(tidyverse)
+library(rlist)
+library(RColorBrewer)
+library(cowplot)
+library(ggrepel)
+library(kableExtra)
+library(patchwork)
+# path <- golem::get_golem_wd()
+plot_violin <- function(x, ...) GimmeMyPlot::plot_violin(x, max.overlaps = 50, ...) + theme(panel.border = element_blank(), axis.ticks = element_blank())
+plot_bar_mcat <- function(x, ...) GimmeMyPlot::plot_bar_mcat(x, colour_gradient = brewer.pal(9, "Reds")[-seq(2)], threshold  = 1, ...) + theme(panel.border = element_blank(), axis.ticks = element_blank())
+plot_alluvial <- function(x, ...) GimmeMyPlot::plot_alluvial(x, ...) + theme(panel.border = element_blank())
+source(file.path(path, "R", "utils.R"))
+```
+
+## Load data
+```{r}
+df <- read_excel(
+    file.path(path, "inst", "data", "Database clean.xlsx"), 
+    na = "*", 
+    skip = 1
+) %>%
+    filter(str_detect(`Patient n°`, "\\d+")) %>%
+    # select(-`Patient n°`) %>%
+    mutate(across(everything(), ~ str_replace_all(., "[<>]", ""))) %>%
+    mutate(across(everything(), ~ type.convert(., as.is = TRUE))) %>%
+    mutate(
+        across(c(`Sex of patient`, `Sex of donor`), ~ factor(., levels = c(1, 2), labels = c("M", "F"))),
+        across(c(`ATG received`, `aGVHD before inclusion and ongoing?`, `cGVHD before inclusion and ongoing?`, `Is the patient alive ?`, `Is the patient alive and in CR at the time of last follow-up ?`), ~ factor(., levels = c(0, 1), labels = c("No", "Yes"))),
+        across(c(NPM1, `Second graft`, `F to M`), ~ factor(., levels = c(1, 2), labels = c("Yes", "No"))),
+        across(c(`Type of donor`), ~ factor(., levels = c(1, 2), labels = c("Sibling", "Unrelated"))),
+        across(c(`Disease type`), ~ factor(., levels = c(1, 2), labels = c("MDS", "AML"))),
+        across(c(`Disease status`), ~ factor(., levels = c(1, 2, 3, 4), labels = c("RC1", "RC2", "PR", "Never treated"))),
+        across(c(`Prognosis category`), ~ factor(., levels = c(1, 2), labels = c("Intermediate", "Adverse"))),
+        across(c(`Matching HLA`), ~ factor(., levels = c(1, 2), labels = c("10/10", "9/10"))),
+        across(c(`Conditioning regiment's details codded`), ~ factor(., levels = c(1, 2), labels = c("MAC", "RIC"))),
+        across(c(`Late or early relapse`), ~ factor(., levels = c(1, 2), labels = c("Early", "Late"))),
+        across(c(`Response after the first cycle of AZA (after C1)`, `CR during the study`), ~ factor(., levels = c(0, 1), labels = c("No response", "Complete response")))
+    )
+
+n_col <- ncol(df)
+df <- select(df, -c((n_col-1):n_col))
+df[df == "ND"] <- NA
+```
+
+```{r}
+date_variables <- find_dates(df)
+numeric_variables <- select(df, -all_of(date_variables)) %>% get_name_num()
+categorical_variables <- select(df, -all_of(c(date_variables, numeric_variables)))
+
+df <-  df %>%
+  mutate(across(all_of(numeric_variables), ~ as.numeric(.)))
+```
+
+## Groups
+```{r}
+df$group3 <- NA
+df[is.na(df$`Prognosis category`) & is.na(df$`Date of Relapse`), ]$group3 <- "P00"
+df[is.na(df$`Prognosis category`) & !is.na(df$`Date of Relapse`), ]$group3 <- "P10"
+df[!is.na(df$`Prognosis category`), ]$group3 <- "P11"
+
+fct_count(df$group3) %>%
+  mutate(f = as.character(f)) %>%
+  rbind(c("Total", nrow(df))) %>%
+  set_colnames(c("Group", "N")) %>%
+  kable0()
+
+df <- mutate(df, id = paste(group3, `Patient n°`, sep = ".")) %>%
+  as.data.frame() %>%
+  set_rownames(pull(., "id"))
+
+df_sub <- filter(df, !is.na(`Date inclusion`)) %>% select(-c("group3", "id"))
+```
+
+```{r}
+df$Group <- NA
+df[is.na(df$`Prognosis category`) & !is.na(df$`Date of Relapse`), ]$Group <- "LR"
+df[is.na(df$`Prognosis category`) & is.na(df$`Date of Relapse`), ]$Group <- "FR"
+df[!is.na(df$`Disease status`) & df$`Late or early relapse` == "Late", ]$Group <- "LR"
+df[!is.na(df$`Disease status`) & df$`Late or early relapse` == "Early", ]$Group <- "ER"
+table(df$Group)
+
+common_cols <- intersect(
+  filter(df, df$Group == "FR") %>% remove_empty() %>% colnames(),
+  df[is.na(df$`Prognosis category`) & is.na(df$`Date of Relapse`), ] %>% remove_empty() %>% colnames()
+)
+df[, common_cols]
+
+fct_count(df$Group) %>%
+    filter(!is.na(f)) %>%
+    mutate(f = as.character(f)) %>%
+    rbind(c("Total", nrow(df))) %>%
+    set_colnames(c("Group", "N")) %>%
+    kable0()
+```
+
+```{r}
+df$group2 <- fct_expand(df$`Disease status`, "LR", "FR")
+df[is.na(df$`Prognosis category`) & !is.na(df$`Date of Relapse`), ]$group2 <- "LR"
+df[is.na(df$`Prognosis category`) & is.na(df$`Date of Relapse`), ]$group2 <- "FR"
+
+fct_count(df$group2) %>%
+  mutate(f = as.character(f)) %>%
+  rbind(c("Total", nrow(df))) %>%
+  set_colnames(c("Group", "N")) %>%
+  kable0()
+```
+
+## Demography
+```{r}
+age_pyramid(df, "Age", "Sex of patient", seq(10, 80, 10), colour = brewer.pal(4, "Paired")[3:4])
+
+plot_pie(
+    df$`Sex of patient`,
+    colour = brewer.pal(4, "Paired")[3:4],
+    cex = 40,
+    digits = 1,
+    hsize = 1.5,
+    title = "Sex",
+    legend = TRUE
+)
+plot_violin(
+    select(df, Age),
+    title = "Age (years)",
+    colour = brewer.pal(8, "Set2")[6],
+    cex = 1.2,
+    pch_size = 3,
+    pch_alpha = 0.25,
+    coef = 1.5,
+    label = TRUE
+)
+```
+
+## Disease characteristics
+```{r}
+list.map(
+    c("Disease type", "Disease status", "Prognosis category", "NPM1"),
+    f(x, y) ~ {
+      if(y == 1)
+        input <- df
+      else
+        input <- df_sub
+      if (y == 2) {
+        sort <- c("Never treated", "PR", "RC2", "RC1")
+        colour <- brewer.pal(4, "Reds")
+      } else {
+        sort <- TRUE
+        colour <- GimmeMyPlot:::palette_discrete()
+      }
+      plot_pie(
+          input[, x],
+          sort = sort,
+          colour = colour,
+          cex = 40,
+          digits = 1,
+          hsize = 1.5,
+          title = x,
+          legend = TRUE
+      )
+  }) %>%
+  plot_grid(
+      plotlist = .,
+      align = "hv",
+      nrow = 2,
+      ncol = 2
+  )
+
+filter(df, NPM1 == "Yes") %>% rownames() %>% cat()
+list.map(c("Never treated", "PR", "RC2"), f(x) ~filter(df, `Disease status` == x) %>% rownames())
+
+select(df_sub, c("Prognosis category", "Disease status", "NPM1")) %>% 
+  mutate(`.Prognosis category` = `Prognosis category`) %>%
+  plot_alluvial()
+```
+
+## Graft
+```{r}
+plot_violin(
+    select(df, `Days between graft and inclusion`),
+    title = "Days between graft and inclusion",
+    colour = brewer.pal(8, "Set2")[2],
+    cex = 1.2,
+    pch_size = 3,
+    pch_alpha = 0.25,
+    coef = 1.5,
+    display_log = TRUE,
+    log = 1,
+    breaks = c(0, 30*2, 30*5, 365, 365*3, 365*12),
+    label = TRUE,
+    func_label= label_date
+)
+
+year(df_sub$`Date inclusion`) %>%
+  plot_pie(
+      colour = brewer.pal(4, "Oranges"),
+      cex = 40,
+      digits = 1,
+      hsize = 1.5,
+      title = "Years of inclusion",
+      legend = TRUE,
+      sort = 2013:2016
+  )
+
+plot_date(df$`Date inclusion`, func2 = ymd, title = "Date of inclusion")
+plot_date(df$`Date of HSCT`, func2 = ymd, title = "Date of HSCT", regex = "%Y")
+
+df <- mutate(
+  df,
+  `Days between graft and inclusion2` = 
+    ((df$`Date inclusion` %>% ymd()) - (df$`Date of HSCT` %>% ymd())) %>%
+    as.numeric()
+)
+
+mutate(df, diff_graft_inclusion = `Days between graft and inclusion` - `Days between graft and inclusion2`) %>% 
+  select(diff_graft_inclusion) %>%
+  plot_violin(
+          cex = 1.2,
+          pch_size = 3,
+          pch_alpha = 0.25,
+          coef = 1.5,
+          log = 2,
+          label = TRUE,
+          title = "Difference between calculated and observed days (inclusion-graft)"
+      )
+```
+
+```{r}
+list.map(
+    c(
+  "Second graft",
+  "Type of donor",
+  "Sex of donor",
+  "Matching HLA",
+  "F to M",
+  "Conditioning regiment's details codded",
+  "ATG received",
+  "aGVHD before inclusion and ongoing?",
+  "cGVHD before inclusion and ongoing?"
+),
+    f(x, y) ~ {
+      if (x %in% c("Sex of donor", "F to M", "ATG received")) {
+        input <- df_sub
+      } else {
+        input <- df
+      }
+      plot_pie(
+          input[, x],
+          # colour = colours[[y]],
+          cex = 20,
+          digits = 1,
+          hsize = 1.5,
+          title = x,
+          legend = TRUE
+      )
+    }
+  ) %>%
+  plot_grid(
+      plotlist = .,
+      align = "hv",
+      nrow = 3,
+      ncol = 3
+  )
+
+df_sub2 <- rename_with(df, ~str_remove(., "before inclusion and ongoing\\?"))
+filter(df, `Second graft` == "Yes") %>% rownames() %>% paste(collapse = ", ")
+filter(df_sub, is.na(`F to M`)) %>% rownames() %>% paste(collapse = ", ")
+
+select(df_sub2, contains("GVHD")) %>% 
+  plot_alluvial()
+select(df_sub2, contains("GVHD")) %>% 
+  colnames() %>%
+  list.map(
+  f(x) ~ filter(df_sub2, !!sym(x) == "Yes") %>% rownames()
+) %>% plot_venn(n_max = 10) + 
+  theme(legend.position = "none")
+
+select(df, c("ATG received", "Conditioning regiment's details codded")) %>%
+    plot_alluvial()
+
+select(df_sub, c("Sex of donor", "F to M", "Sex of patient")) %>% 
+    mutate(`.Sex of patient` = `Sex of patient`) %>%
+    plot_alluvial()
+select(df, c("Sex of donor", "F to M", "Sex of patient")) %>% 
+    filter(`F to M` == "Yes") %>%
+    select(c("Sex of donor", "F to M", "Sex of patient")) %>%
+    kable0()
+```
+
+
+```{r}
+list.map(
+  c("Global chemerism", "T chemerism at inclusion"),
+    f(x, y) ~ {
+      plot_violin(
+          select(df, x),
+          title = x,
+          colour = brewer.pal(3, "Accent")[y+1],
+          cex = 1.2,
+          pch_size = 3,
+          pch_alpha = 0.25,
+          coef = 1.5,
+          display_log = FALSE,
+          log = 10,
+          breaks = NULL,
+          label = TRUE
+      )
+    }
+) %>%
+  plot_grid(
+      plotlist = .,
+      align = "hv",
+      ncol = 2
+  )
+
+plot_date(df$`Date IS stopped`, func2 = ymd, title = "Date IS stopped", regex = "%Y")
+plot_violin(
+      select(df, "Time from IS arrest and inclusion (days)"),
+      title = "Days between IS arrest and inclusion",
+      colour = brewer.pal(3, "Accent")[1],
+      cex = 1.2,
+      pch_size = 3,
+      pch_alpha = 0.25,
+      coef = 1.5,
+      display_log = TRUE,
+      log = 10,
+      breaks = c(0, 1, 10, 2*30, 365, 10*365),
+      label = TRUE,
+      func_label= label_date
+  )
+
+df <- mutate(
+  df,
+  `Days between IS arrest and inclusion2` = 
+    ((df$`Date inclusion` %>% ymd()) - (df$`Date IS stopped` %>% ymd())) %>%
+    as.numeric()
+)
+
+mutate(df, diff_days = `Time from IS arrest and inclusion (days)` - `Days between IS arrest and inclusion2`) %>% 
+  select(diff_days) %>%
+  plot_violin(
+          cex = 1.2,
+          pch_size = 3,
+          pch_alpha = 0.25,
+          coef = 1.5,
+          log = 2,
+          label = TRUE,
+          # title = "Difference between calculated and observed days (inclusion-graft)"
+      )
+```
+
+## Relapse
+```{r}
+plot_violin(
+    select(df, `Days between HCT and relapse`),
+    title = "Days between HCT and relapse",
+    colour = brewer.pal(8, "Set2")[4],
+    cex = 1.2,
+    pch_size = 3,
+    pch_alpha = 0.25,
+    coef = 1.5,
+    display_log = TRUE,
+    log = 1,
+    breaks = c(0, 1, 10, 100, 1000),
+    width_title = 15,
+    label = TRUE,
+    func_label= label_date
+)
+
+table(df_sub$`Late or early relapse`, df_sub$`Disease status`)
+
+plot_date(df$`Date of Relapse`, func2 = ymd, title = "Date of Relapse", regex = "%Y")
+
+df <- mutate(
+  df,
+  `Days between HCT and relapse (calculated)` = 
+    ((df$`Date of Relapse` %>% ymd() - (df$`Date of HSCT` %>% ymd()))) %>%
+    as.numeric()
+)
+
+plot_violin(
+    select(df, `Days between HCT and relapse (calculated)`),
+    title = "Days between HCT and relapse",
+    colour = brewer.pal(8, "Set2")[4],
+    cex = 1.2,
+    pch_size = 3,
+    pch_alpha = 0.25,
+    coef = 1.5,
+    display_log = TRUE,
+    log = 1,
+    breaks = c(2*30, 5*30, 365, 3*365, 6*365, 12*365),
+    width_title = 15,
+    label = TRUE,
+    func_label= label_date
+)
+
+mutate(df, diff_days = df$`Days between HCT and relapse` - df$`Days between HCT and relapse (calculated)`) %>% 
+    select(diff_days) %>%
+    plot_violin(
+        cex = 1.2,
+        pch_size = 3,
+        pch_alpha = 0.25,
+        coef = 1.5,
+        log = 2,
+        label = TRUE,
+        # display_log = TRUE,
+        # breaks = c(4*30, 7*30, 365, 3*365, 7*365, 14*365),
+        func_label= label_date,
+        title = "Difference between calculated and observed days (HCT-relapse)"
+    )
+
+df %>% filter(rownames(.) %in% c("P11.39", "P11.16", "P11.25")) %>% select(`Days between HCT and relapse`, `Days between HCT and relapse (calculated)`, `Date of HSCT`, `Date of Relapse`, `Date IS stopped`) %>% kable0()
+
+df <- mutate(
+  df,
+  `Days between HCT and relapse` = 
+    ((df$`Date of Relapse` %>% ymd() - (df$`Date of HSCT` %>% ymd()))) %>%
+    as.numeric()
+)
+
+plot_pie(
+    df_sub$`Late or early relapse`,
+    colour = brewer.pal(10, "Paired")[9:10],
+    cex = 40,
+    digits = 1,
+    hsize = 1.5,
+    title = "Time of relapse",
+    legend = TRUE
+)
+
+filter(df, `Late or early relapse` == "Late") %>% rownames() %>% cat()
+```
+
+## Cells
+```{r}
+list.map(
+  c("Median WBC (/µL)", "Median ALC (/µL)", "%blasts in BM at inclusion"),
+    f(x, y) ~ {
+      if (y %in% seq(2)) {
+        display_log <- TRUE
+        breaks <- c(500, 1000, 5000, 1e4, 5e4)
+      } else {
+        display_log <- FALSE
+        breaks <- NULL
+      }
+      plot_violin(
+          select(df, x),
+          title = x,
+          colour = brewer.pal(9, "Set3")[-2][y],
+          cex = 1.2,
+          pch_size = 3,
+          pch_alpha = 0.25,
+          coef = 1.5,
+          display_log = display_log,
+          log = 2,
+          breaks = breaks,
+          label = TRUE
+      )
+    }
+) %>%
+  plot_grid(
+      plotlist = .,
+      align = "hv",
+      ncol = 3
+  )
+```
+
+## Survival
+```{r}
+colours <- brewer.pal(8, "Paired") %>%
+  split(ceiling(seq_along(.) / 2))
+list.map(
+    c("Response after the first cycle of AZA (after C1)", "CR during the study", "Is the patient alive ?", "Is the patient alive and in CR at the time of last follow-up ?"),
+    f(x, y) ~ plot_pie(
+          df_sub[, x],
+          colour = colours[[y]],
+          cex = 27,
+          digits = 1,
+          hsize = 1.5,
+          title = x,
+          legend = TRUE
+      )
+  ) %>%
+  plot_grid(
+      plotlist = .,
+      align = "hv",
+      nrow = 2,
+      ncol = 2
+  )
+
+list.map(
+  c("Days alive since inclusion", "Days to last follow-up"),
+    f(x, y) ~ {
+      if (y == 1) {
+        breaks <- c(0, 6*30, 365)
+      } else {
+        breaks <- c(0, 6*30, 365, 2*365)
+      }
+      plot_violin(
+          select(df, x),
+          title = x,
+          colour = rev(brewer.pal(12, "Set3"))[-4][y],
+          cex = 1.2,
+          pch_size = 3,
+          pch_alpha = 0.25,
+          coef = 1.5,
+          label = TRUE,
+          breaks = breaks,
+          func_label= label_date
+      )
+    }
+) %>%
+  plot_grid(
+      plotlist = .,
+      align = "hv",
+      ncol = 2
+  )
+
+list.map(
+  c("Date of Death", "Date of last follow-up"),
+  f(x, y) ~  plot_date(pull(df, x), func2 = ymd, title = x, regex = ifelse(y == 2, "%Y-%m", "%Y"))
+) %>%
+  plot_grid(
+      plotlist = .,
+      align = "hv",
+      nrow = 2
+  )
+
+mutate(
+    df,
+    diff_days = (df$`Days alive since inclusion`) - ((df$`Date of Death` %>% ymd() - (df$`Date inclusion` %>% ymd()))  %>% as.numeric()) 
+) %>%
+    select(diff_days) %>%
+    plot_violin(
+        cex = 1.2,
+        pch_size = 3,
+        pch_alpha = 0.25,
+        coef = 1.5,
+        log = 2,
+        label = TRUE,
+        display_log = TRUE,
+        func_label= label_date
+    )
+
+mutate(
+    df,
+    diff_days = (df$`Days to last follow-up`) - ((df$`Date of last follow-up` %>% ymd() - (df$`Date inclusion` %>% ymd()))  %>% as.numeric()) 
+) %>%
+    select(diff_days) %>%
+    plot_violin(
+        cex = 1.2,
+        pch_size = 3,
+        pch_alpha = 0.25,
+        coef = 1.5,
+        log = 2,
+        label = TRUE,
+        display_log = TRUE,
+        func_label= label_date
+    )
+
+
+df <- mutate(
+  df,
+  `Days between HCT and relapse (calculated)` = 
+    ((df$`Date of Relapse` %>% ymd() - (df$`Date of HSCT` %>% ymd()))) %>%
+    as.numeric()
+)
+
+mutate(df, diff_days = df$`Days between HCT and relapse` - df$`Days between HCT and relapse (calculated)`) %>% 
+    select(diff_days) %>%
+    plot_violin(
+        cex = 1.2,
+        pch_size = 3,
+        pch_alpha = 0.25,
+        coef = 1.5,
+        log = 2,
+        label = TRUE,
+        display_log = TRUE,
+        # breaks = c(4*30, 7*30, 365, 3*365, 7*365, 14*365),
+        func_label= label_date,
+        title = "Difference between calculated and observed days (HCT-relapse)"
+    )
+
+filter(df, `Response after the first cycle of AZA (after C1)` == "Complete response") %>% rownames() %>% paste(collapse = ", ")
+filter(df, `Is the patient alive and in CR at the time of last follow-up ?` == "Yes") %>% rownames() %>% paste(collapse = ", ")
+
+select(df_sub, c("CR during the study", "Is the patient alive ?", "Is the patient alive and in CR at the time of last follow-up ?")) %>% 
+  mutate(`.Is the patient alive and in CR at the time of last follow-up ?` = `Is the patient alive and in CR at the time of last follow-up ?`) %>% 
+  plot_alluvial()
+
+filter(df,  `Is the patient alive and in CR at the time of last follow-up ?` == "Yes") %>% select(c("Response after the first cycle of AZA (after C1)", "CR during the study", "Is the patient alive ?", "Is the patient alive and in CR at the time of last follow-up ?")) %>% kable0()
+```
+
+## Missing data
+```{r}
+p <- list()
+
+p[[1]] <- select(df_sub, -1) %>% 
+  apply(2, function(x) (is.na(x)) %>% which() %>% length()) %>%
+  .[. != 0] %>%
+  plot_bar(sample_size = nrow(df_sub), colour = rev(brewer.pal(9, "Reds")[-seq(2)]), label_x = "value", label_y = "percent")
+
+p[[2]] <- apply(df_sub, 1, function(x) (is.na(x)) %>% which() %>% length()) %>%
+  .[. > 1] %>%
+  plot_bar(sample_size = ncol(df_sub), colour  = rev(brewer.pal(9, "Reds")[-seq(2)]), label_x = "none")
+p[[2]] + p[[1]]
+```
+
+## Outliers
+```{r}
+p2 <- list()
+l_outliers <- select(df, numeric_variables) %>%
+    select(-`Patient n°`) %>%
+    list.map(f(x, y, z) ~select(df, z) %>% filter(!is.na(!!sym(z))) %>% identify_outliers(method = "sd") %>% names()) %>% 
+    unlist()
+p2[[1]] <- plot_bar_mcat(l_outliers, n_max = 11, sample_size = (length(numeric_variables) -1))
+
+tmp <- mutate(categorical_variables, across(everything(), ~ as.character(.))) %>% set_rownames(pull(df, "id"))
+
+tab_stats <- list.map(tmp, f(x, x, z) ~ select(tmp, z) %>% print_multinomial()) %>% 
+  list.rbind()
+
+l_rare <- mutate(tab_stats, N = str_remove_all(Statistics, " \\(.*") %>% as.numeric()) %>% 
+  filter(N <= 5) %>%
+  split(., seq(nrow(.))) %>%
+  map(~ tmp %>%
+      filter(!!sym(.x$Variables) == .x$Levels) %>%
+      rownames()
+      ) %>% 
+  unlist()
+p2[[2]] <- plot_bar_mcat(l_rare, n_max = 7, sample_size = length(categorical_variables))
+
+p2[[3]] <- plot_bar_mcat(c(l_rare, l_outliers), n_max = 10, sample_size = length(categorical_variables) + length(numeric_variables) -1)
+
+p2[[1]] + p2[[2]] + p2[[3]]
+
+filter(df, id == "P11.39") %>% select(2:3, 5) %>% kable0()
+```
+
+```{r}
+num_stats <- select(df, numeric_variables) %>% 
+  select(-1) %>%
+  print_numeric()
+```
+
+## Formatting
+```{r}
+clinic <- select(df, -c("Patient n°", "group3", "group2", "id", "Days between graft and inclusion2", "Days between IS arrest and inclusion2", "Days between HCT and relapse (calculated)")) %>%
+  mutate(across(all_of(date_variables), ~ ymd(.))) %>%
+  mutate(across(all_of(c(colnames(categorical_variables), "Group")), ~ as.factor(.))) %>%
+  rename(`Days between IS arrest and inclusion`= "Time from IS arrest and inclusion (days)") %>%
+  rename(`Date of relapse` = "Date of Relapse") %>%
+  rename(`Date of death` = "Date of Death")
+```
+
+
+```{r, eval = FALSE}
+usethis::use_data(clinic, overwrite = TRUE)
+clinic_cat <- select(clinic, all_of(c(colnames(categorical_variables), "Group")))
+usethis::use_data(clinic_cat, overwrite = TRUE)
+
+clinic_num <- select(clinic, all_of(get_name_num(clinic)))
+usethis::use_data(clinic_num, overwrite = TRUE)
+```
+
+## Cytometry
+```{r}
+cytometry <- read_excel(
+    file.path(path, "inst", "data", "20250701_cytometry.xlsx"), 
+    skip = 1
+) %>% rename(CD3 = "CD3...212")
+
+ncol(cytometry)-3
+
+cytometry <- cytometry %>%
+  group_by(timepoint) %>%
+  mutate(
+    timepoint = ifelse(
+      str_starts(id2, "P00"),
+      case_when(
+        cumsum(str_starts(id2, "P00")) <= 10 ~ "100",
+        cumsum(str_starts(id2, "P00")) <= 20 ~ "365",
+        cumsum(str_starts(id2, "P00")) > 20 ~ "730",
+        TRUE ~ timepoint
+      ),
+      timepoint
+    )
+  ) %>%
+  ungroup() 
+
+l_cytometry <- list.map(
+    unique(pull(cytometry, timepoint)),
+    f(x) ~ filter(cytometry, timepoint == x) %>%
+  select(-patient) %>%
+  as.data.frame() %>%
+  column_to_rownames("id2")
+)
+
+sapply(l_cytometry, nrow)
+
+list.map(
+  l_cytometry,
+  f(x) ~rownames(x) %>%
+  str_remove_all("\\..*") %>% 
+  table()
+)
+
+cytometry <- cytometry %>%
+  as.data.frame() %>%
+  mutate(id = paste(id2, timepoint, sep = ".")) %>%
+  column_to_rownames("id")
+```
+
+```{r}
+vars <- c(
+    "CD4.tot",	"CD4.tot_CD3",
+    "FoxP3p_CD4.tot",	"FoxP3p_CD3",
+    "CD45RApCD25n_FoxP3",	"FOXP3pCD45RApCD25n_CD3",
+    "CD45RAnCD25n_Foxp3",	"FOXP3pCD45RAnCD25n_CD3",
+    "CD45RApCD25p_Foxp3",	"FOXP3pCD45RApCD25p_CD3",
+    "CD45RAnCD25p_Foxp3",	"FOXP3pCD45RAnCD25p_CD3",
+    "CD25p_Foxp3",	"FOXP3pCD25p_CD3",
+    "CD39p_Tconv",	"CD39pTconv_CD3",
+    "CD8",	"CD8_CD3",
+    "CD3"
+  )
+p <- list.map(
+  vars,
+    f(x, y) ~ {
+        display_log <- TRUE
+        breaks <- NULL
+      if (y %in% c(3, 7, 11, 13, 17:18)) {
+        log_power <- 2
+        # breaks <- c(0, 1, 1e1, 1e2, 1e3, 1e4, 1e5)
+      } else {
+        log_power <- 10
+      #   display_log <- FALSE
+      }
+      
+      plot_violin(
+          select(cytometry, x),
+          title = str_replace_all(x, "Foxp3", "FOXP3") %>%
+            str_replace_all("p", "\\+ ") %>%
+            str_replace_all("n", "\\- ") %>% 
+            str_replace_all("_", " \\/ ") %>%
+            str_replace_all("Tco- v", "Tconv") %>%
+            str_remove_all("\\."),
+          colour = GimmeMyPlot:::palette_continuous()(length(vars))[y],
+          # cex = 1.2,
+          pch_size = 3,
+          pch_alpha = 0.25,
+          coef = 1.5,
+          display_log = display_log,
+          log = log_power,
+          breaks = breaks,
+          label = TRUE,
+          # force = 100
+      )
+    }
+)
+```
+
+
+```{r}
+plot_grid(
+      plotlist = p,
+      # align = "hv",
+      nrow = 3,
+      ncol = 6
+  )
+  
+plot_grid(
+    plotlist = c(p[1:4], p[13:14]),
+    align = "hv",
+    byrow = FALSE,
+    ncol = 3
+)
+
+plot_grid(
+    plotlist = p[15:19],
+    align = "hv",
+    byrow = FALSE,
+    ncol = 3
+)
+
+plot_grid(
+    plotlist = p[5:12],
+    align = "hv",
+    byrow = FALSE,
+    ncol = 4
+)
+```
+
+## Missing data
+```{r}
+X <- cytometry
+p <- list()
+p[[1]] <- apply(X, 1, function(x) (is.na(x)) %>% which() %>% length()) %>%
+  .[. > 1] 
+
+p[[2]] <- apply(X, 2, function(x) (is.na(x)) %>% which() %>% length()) %>%
+  .[. != 0] 
+
+p <- list.map(
+  p, 
+  f(x, y) ~ {
+    if (y == 1) {
+      sample_size <- ncol(X)
+    } else {
+      sample_size <- nrow(X)
+    }
+    plot_bar(
+      x,
+      sample_size = sample_size, 
+      colour = rev(brewer.pal(9, "Reds")[-seq(2)]), 
+      label_x = "value", 
+      label_y = "percent",
+      n_max = 30
+    )
+  }
+)
+p[[1]] + ggtitle("#NA per samples") + p[[2]] + ggtitle("#NA per variables") 
+
+library(naniar)
+gg_miss_var(cytometry, show_pct = TRUE) + theme_classic() + GimmeMyPlot:::theme_custom()
+vis_miss(cytometry)
+```
+
+## Outliers
+```{r}
+l_outliers <- list.map(cytometry, f(x, y, z) ~select(cytometry, z) %>% filter(!is.na(!!sym(z))) %>% identify_outliers(method = "sd") %>% names()) %>% 
+    unlist()
+plot_bar_mcat(l_outliers, n_max = 15, sample_size = ncol(cytometry))
+```
+

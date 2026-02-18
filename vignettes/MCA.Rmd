@@ -1,0 +1,322 @@
+---
+title: "MCA"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{MCA}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+    collapse = TRUE,
+    comment = "#>"
+)
+```
+
+```{r}
+set.seed(1234)
+library(hlebuhanec.0325)
+library(factoextra)
+library(FactoMineR)
+library(ade4)
+library(janitor)
+library(magrittr)
+library(GimmeMyPlot)
+library(GimmeMyStats)
+library(tidyverse)
+library(rlist)
+library(RColorBrewer)
+library(cowplot)
+library(ggrepel)
+library(kableExtra)
+library(patchwork)
+library(corrplot)
+```
+
+## Data preparation
+```{r}
+data("clinic_cat")
+clinic_cat <- clinic_cat %>%
+  # filter(str_detect(rownames(., "^P11\\."))) %>%
+  mutate(across(where(is.character), as.factor)) %>%
+  mutate(across(where(is.factor), fct_drop))
+colPers <- c("blue", "grey", "red")
+```
+
+## Data cleaning
+```{r}
+na_column <- clinic_cat %>%
+    apply(2, function(x) (is.na(x)) %>% which() %>% length()) %>%
+    .[. != 0] %>% 
+    names()
+
+clinic_cat <- clinic_cat %>%
+  select(-na_column)
+
+tab_stats <- list.map(clinic_cat, f(x, x, z) ~ select(clinic_cat, z) %>% print_multinomial()) %>% 
+  list.rbind()
+
+rare_mod <- mutate(tab_stats, N = str_remove_all(Statistics, " \\(.*") %>% as.numeric()) %>% 
+    filter(N <= 5)
+rare_mod %>% arrange(N) %>%
+  kable0()
+```
+
+## Analysis
+```{r}
+res_mca <- MCA(clinic_cat, ncp = 4, graph = FALSE)
+res_mca0 <- dudi.acm(clinic_cat, nf = 4, scannf = FALSE)
+```
+
+## Eigen plot
+```{r}
+eigenval <- res_mca$eig[, 1]
+
+plot_eig(eigenval, "mean", "Eigen value")
+eig_pct <- eigenval %>% divide_by(sum(.)) %>% multiply_by(100)
+
+plot_eig(eig_pct, "mean") + plot_eig(eig_pct, "cum")
+
+p1 + p2
+
+fviz_screeplot(
+    res_mca,
+    addlabels = FALSE,
+    geom = "bar",
+    hjust = 0.5,
+    barfill = "black",
+    barcolor = "black",
+    main = "",
+    ggtheme = theme_classic()
+) + GimmeMyPlot:::theme_custom() +
+  ylab("% of explained variances")
+```
+
+## Sample plots
+```{r}
+#res_mca$l1
+corrplot(
+  t(res_mca$ind$coord),
+  is.corr = FALSE,
+  col = colorRampPalette(c(rev(brewer.pal(3, "Blues")), "grey", brewer.pal(3, "Reds")))(100)
+)
+
+plot_ctr(res_mca)
+p[[1]] / p[[2]]
+p[[3]] / p[[4]]
+
+fviz_mca_ind(
+    res_mca,
+    col.ind = "contrib",
+    axes = c(1, 2),
+    gradient.cols = colPers,
+    repel = TRUE,
+    ggtheme = theme_minimal()
+) %>% theme_perso_2D() + 
+  labs(colour = "Contribution") +
+  ggtitle(NULL)
+
+p <- list.map(
+  seq(4),
+  f(x) ~fviz_contrib(res_mca, choice = "var", axes = x, top = 50) + 
+    GimmeMyPlot:::theme_custom(cex = 0.8) +
+    ggtitle(paste("Dimension", x))
+)
+p[[1]] / p[[2]]
+p[[3]] / p[[4]]
+
+group_vector <- clinic_cat[rownames(res_mca0$li), "Group"]
+fviz_mca_ind(
+    res_mca,
+    label = "none",
+    axes = c(1, 2),
+    habillage = group_vector,
+    palette = GimmeMyPlot:::palette_discrete(),
+    addEllipses = TRUE, 
+    ellipse.type = "confidence",
+    ggtheme = theme_minimal()
+) %>% theme_perso_2D() +
+  ggtitle(NULL)
+```
+
+## Variable plots
+```{r}
+pattern <- paste0(
+  "^(",
+  paste(
+    na_column %>%
+      str_replace_all(" ", ".") %>%
+      str_replace_all("-", "."),
+    collapse = "|"
+  ),
+  ")\\."
+)
+res_mca$co <- res_mca$co %>% 
+  filter(!str_detect(rownames(.), pattern)) %>% 
+  filter(!str_detect(rownames(.), "Response.after.the.first.cycle.of.AZA"))
+res_mca$c1 <- res_mca$c1 %>%
+  filter(!str_detect(rownames(.), pattern)) %>% 
+  filter(!str_detect(rownames(.), "Response.after.the.first.cycle.of.AZA"))
+res_mca$cr <- res_mca$cr[rownames(res_mca$cr) %in% na_column, , drop = FALSE]
+res_mca$tab <- select(res_mca$tab, !matches(pattern))
+```
+
+```{r}
+fviz_mca_var(
+  res_mca,
+  col.var = "contrib",
+  axes = c(1, 2),
+  gradient.cols = colPers,
+  repel = TRUE,
+  select.var = list(contrib = 50)
+) %>% theme_perso_2D() + 
+  labs(colour = "Contribution") +
+  ggtitle(NULL)
+
+corrplot(
+  t(res_mca$var$coord),
+  is.corr = FALSE,
+  col = colorRampPalette(c(rev(brewer.pal(3, "Blues")), "grey", brewer.pal(3, "Reds")))(100)
+)
+
+plotellipses(res_mca)
+boxplot(res_mca0)
+boxplot(res_mca0, xax = 2)
+scatter(res_mca, col = GimmeMyPlot:::palette_discrete())
+
+i <- 1
+plot_bar(
+  res_mca$cr[, i, drop = FALSE] * 100,
+  label_x = "value",
+  threshold = 0,
+  digits = 2,
+  title = "Variable contribution"
+)
+
+fviz_mca_var(
+    res_mca,
+    choice = "mca.cor",
+    axes = c(1, 2),
+    repel = TRUE,
+    ggtheme = theme_minimal()
+) %>% theme_perso_2D() +
+  ggtitle(NULL)
+
+fviz_mca_var(
+    res_mca,
+    axes = c(1, 2),
+    col.var = "cos2",
+    ggtheme = theme_minimal()
+) %>% theme_perso_2D()
+```
+
+## Biplot
+```{r}
+# Integrative
+fviz_mca_biplot(
+    res_mca,
+    axes = c(1, 2),
+    repel = TRUE,
+    col.var = "gray50",
+    col.ind = "gray50",
+    # col.ind = as.character(cls[-15, 2]),
+    # alpha.var = "cos2",
+    # palette = c(colors_k, "red"),
+    # legend.title = "Clusters",
+    # pointsize = "cos2",
+    mean.point = FALSE,
+    palette = GimmeMyPlot:::palette_discrete(),
+    habillage = group_vector,
+    select.var = list(contrib = 20)
+) %>% theme_perso_2D() +
+    ggtitle(NULL)
+```
+
+
+```{r}
+cls <- set_clusters(rownames(blocks))
+cl <- cls$cl
+colors_k <- cls$colors_k
+# setdiff(rownames(blocks), names(cls))
+# setdiff(cls[, 1], rownames(blocks))
+# cls <- rbind(cls[-35, ], data.frame(X = c("1007", "1014"), ind_clusters = NA))
+# cls <- cls %>% mutate(X = as.numeric(X)) %>% arrange(X)
+
+# Integrative
+theme_perso_2D(
+    fviz_mca_biplot(
+        res_mca0,
+        repel = TRUE,
+        axes = c(1, 2),
+        # col.ind = as.numeric(disease),
+        col.ind = cl,
+        # col.ind = clinic_intersect$physician_global_assessment,
+        col.var = "blue",
+        # col.ind = "gray",
+        gradient.cols = colors_k,
+        # gradient.cols = colors_ind,
+        # alpha.var = "cos2",
+        # palette = c(colors_k, "red"),
+        # legend.title = "Clusters",
+        # pointsize = "cos2",
+        mean.point = FALSE,
+        title = "",
+        select.var = list(contrib = 20)
+    )
+)
+
+#
+# sapply(colnames(blocks), function(i) length(which(is.na(as.data.frame(blocks[, i])[, 1])))) %>% sort()
+Y <- res_mca$ind$coord[, 2]
+Y <- res_mca0$l1[, 2]
+stats <- cbind(Y, blocks) %>%
+    pivot_longer(!Y) %>%
+    group_by(name) %>%
+    anova_test(Y ~ value)
+stats0 <- cbind(Y, blocks) %>%
+    pivot_longer(!Y) %>%
+    group_by(name) %>%
+    tukey_hsd(Y ~ value)
+t_stats <- stats %>%
+    as_tibble() %>%
+    arrange(p) %>%
+    filter(p < .05) %>%
+    adjust_pvalue(method = "BH") %>%
+    add_significance() %>%
+    select(c("name", "p.adj", "p.adj.signif"))
+t_stats0 <- stats0 %>%
+    as_tibble() %>%
+    arrange(p.adj) %>%
+    filter(p.adj < .05) %>%
+    select(c("name", "group1", group2, "p.adj", "p.adj.signif"))
+
+
+ggbetweenstats(
+    data.frame(
+        var = res_mca0$l1[, 2],
+        cl = factor(blocks$at_least_3_skin_rash)
+    ),
+    cl,
+    var,
+    ggtheme = theme_classic(),
+    xlab = "",
+    ylab = ""
+) +
+    theme(
+        axis.ticks.x = element_blank(),
+        axis.line.x = element_line(color = "white")
+    ) +
+    scale_color_manual(values = get_colors()[seq(2)]) +
+    geom_hline(yintercept = 0, lwd = 0.25)
+
+temp0 <- data.frame(cls = as.character(cl), blocks) %>%
+    filter(!is.na(cls)) %>%
+    select(-cls) %>%
+    pivot_longer(everything()) %>%
+    group_by(name) %>%
+    nest()
+lapply(seq_along(blocks), function(i) chisq_test(na.omit(cl), as.data.frame(temp0[i, ]$data)[, 1])) %>%
+    Reduce(rbind, .) %>%
+    cbind(colnames(blocks), .)
+```

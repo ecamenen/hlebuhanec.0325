@@ -1,0 +1,100 @@
+---
+title: "multigroup"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{multigroup}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+set.seed(1234)
+library(hlebuhanec.0325)
+library(dlookr)
+data("clinic")
+```
+
+## Numeric
+```{r}
+clinic %>%
+    group_by(Group) %>%
+    summarise(print_numeric(Age)) %>% 
+    select(-c("Variables", "Zeros", "NAs"))
+
+# clinic %>%
+#     group_by(Group) %>% 
+#     plot_normality(Age)
+
+clinic %>%
+  select(Age, Group) %>%
+  mutate(ID = rownames(.)) %>%
+  pivot_wider(names_from = Group, values_from = Age) %>%
+  column_to_rownames("ID") %>%
+  plot_violin(
+    colour = GimmeMyPlot:::palette_discrete()[seq(3)],
+    breaks = c(25, 50, 75),
+    label = TRUE,
+    title = "Age"
+  )
+```
+
+```{r}
+clinic %>%
+  filter(Group != "FR") %>%
+    group_by(Group) %>%
+    summarise(print_numeric(`Days between HCT and relapse`)) %>% 
+    select(-c("Variables", "Zeros", "NAs"))
+
+clinic %>%
+  filter(Group != "FR") %>%
+  select(`Days between HCT and relapse`, Group) %>%
+  mutate(ID = rownames(.)) %>%
+  pivot_wider(names_from = Group, values_from = `Days between HCT and relapse`) %>%
+  column_to_rownames("ID") %>%
+  plot_violin(
+    colour = GimmeMyPlot:::palette_discrete()[seq(2)],
+    breaks = c(3*30, 365, 4*365, 12*365),
+    label = TRUE,
+    title = "Days between HCT and relapse",
+    display_log = TRUE,
+    func_label= label_date,
+    method = "wilcox"
+  )
+```
+
+```{r}
+p <- list.map(
+  c(
+    "Sex of patient",
+    "Disease type",
+    "aGVHD before inclusion and ongoing?",
+    "cGVHD before inclusion and ongoing?",
+    "Conditioning regiment's details codded",
+    "Matching HLA",
+    "Second graft",
+    "Type of donor"
+  ),
+  f(x) ~ plot_bar_2cat(select(clinic, x, "Group"), sort = c("ER", "LR", "FR")) +
+    ylab(NULL)
+)
+
+plot_grid(
+  plotlist = p[seq(2)],
+  align = "hv",
+  ncol = 2
+)
+
+plot_grid(
+  plotlist = p[3:8],
+  align = "hv",
+  ncol = 3
+)
+```
+

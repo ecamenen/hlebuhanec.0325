@@ -1,0 +1,139 @@
+---
+title: "RPART"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{RPART}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+set.seed(1234)
+library(rpart)
+```
+
+## Modelling
+```{r}
+format_X <- function(x) str_replace_all(x, "\\+", "p") %>% str_replace_all("\\-", "n") %>% str_replace_all(" \\/ ", "\\.") %>% str_replace_all(" \\(", "_") %>% str_remove_all("\\)")
+
+df0 <- data.frame(X %>% set_colnames(colnames(.) %>% format_X()), y = Y)
+
+class_weights <- calculate_class_weights(Y, "sqrt")
+
+mod <- rpart(
+  y ~ .,
+  data = df0,
+  method = "class",
+  xval = 500,
+  parms = list(prior = as.numeric(class_weights))
+)
+modele <- rpart(
+  y ~ .,
+  data = df0,
+  method = "class",
+  xval = 500,
+  cp = 1e-4,
+  minsplit = 2,
+  maxdepth = 30,
+  parms = list(prior = as.numeric(class_weights))
+)
+```
+
+## Model quality
+```{r}
+plotcp(mod)
+printcp(mod)
+rsq.rpart(mod)
+```
+
+## Variable contribiton
+```{r}
+plot_bar(
+  mod$variable.importance %>%
+    set_names(names(.) %>% str_replace("_", " (") %>% 
+  str_c(")") %>% format_cytometry()),
+  n_max = 10,
+  digits = 1,
+  colour = c("#99000D", "gray"),
+  label_x = "value",
+  width_text = 25,
+  title = "Variable contribution"
+)
+plot_bar(
+    modele$variable.importance %>%
+        set_names(names(.) %>% str_replace("_", " (") %>% 
+                      str_c(")") %>% format_cytometry()),
+    n_max = 10,
+    digits = 1,
+    colour = c("#99000D", "gray"),
+    label_x = "value",
+    width_text = 40,
+    width_title = 40,
+    title = "Variable contribution"
+)
+```
+
+## Decision tree
+```{r}
+i <- which.min(mod$cptable[, "xerror"])
+threshold <- mod$cptable[i, "xerror"] + mod$cptable[i, "xstd"]
+j <- which(mod$cptable[, "xerror"] <= threshold)
+j <- ifelse(j == 1, 2, j)
+mod2 <- prune(mod, cp = mod$cptable[j, "CP"][1])
+mod3 <- prune(modele, cp = modele$cptable[3, "CP"][1])
+rpart.plot::prp(
+    mod2,
+    type = 5,
+    extra = 101,
+    fallen.leaves = TRUE,
+    box.palette = GimmeMyPlot:::palette_discrete()[seq(4)] %>% as.list(),
+  #   split.fun = function(x, labs, digits, varlen, faclen) {
+  #   str_replace(labs, "_", " (") %>%
+  #     str_c(")") %>%
+  #     format_X()
+  # },
+    varlen = 50,
+    branch.lwd = 3,
+    nn.lwd = 2,
+    branch.col = "black",
+    split.col = "red",
+    col = "white",
+    split.lwd = 2,
+    under = TRUE,
+    split.border.col = "white",
+    under.cex = 0.9,
+    split.font = 1
+)
+
+vars <- mod2$frame$var %>% .[!str_detect(., "<leaf>")]
+vars2 <- modele$variable.importance %>%
+    set_names(names(.) %>% str_replace("_", " (") %>% 
+  str_c(")") %>% format_cytometry() %>% str_replace_all("\\(Treg \\/ ", "\\(Treg ")) %>% names()
+str_replace(vars, "_", " (") %>% str_c(")") %>% format_X()
+```
+
+## Model quality
+```{r}
+predicted <- rpart.plot::rpart.predict(mod2, df0, type = "class")
+conf <- confusionMatrix(as.factor(predicted), Y)
+
+preds <- rpart.plot::rpart.predict(mod2, df0, type = "prob")
+
+list.map(
+  attr(mod, "ylevels"),
+  f(i) ~ data.frame(
+      pred = preds[, i],
+      obs = as.numeric(Y == i)
+  ) %>%
+      plot_roc() +
+      ggtitle(i)
+) %>%
+  plot_grid(plotlist = ., ncol = 2, align = "hv")
+```

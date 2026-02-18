@@ -1,0 +1,289 @@
+---
+title: "survival"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{survival}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+## Setup
+```{r setup}
+library(hlebuhanec.0325)
+library(survival)
+library(survminer)
+library(ggfortify)
+library(forestmodel)
+library(broom)
+library(splines)
+data("clinic")
+data("cytometry_ER")
+```
+
+## Data preparation
+```{r}
+cat_var <- "Is the patient alive and in CR at the time of last follow-up ?"
+survival_df <- clinic %>%
+  # filter(Group == "ER") %>%
+  filter(!is.na(`Is the patient alive ?`)) %>%
+  select(c("Is the patient alive ?", "Days to last follow-up", cat_var)) %>%
+  mutate(alive = ifelse(`Is the patient alive ?` == "Yes", 0, 1)) %>%
+  rename(survival = `Days to last follow-up`) %>%
+  select(-`Is the patient alive ?`)
+
+time <- "C1"
+cytometry_ER_C1 <- 
+  cytometry %>%
+  # cytometry_ER %>% 
+  # filter(str_detect(rownames(.), time)) %>%
+  set_rownames(rownames(.) %>% str_remove_all(paste0(".", time))) %>% mutate(
+  M4_M1 = `M4 / Treg / CD45RA-CD25+ (Treg CD45RA-CD25+)` / `M1 / Treg / CD45RA-CD25+ (Treg CD45RA-CD25+)`)
+
+
+tmp <- inner_join(rownames_to_column(cytometry_ER_C1), rownames_to_column(survival_df)) %>%
+  column_to_rownames("rowname")
+metadata <- select(tmp, colnames(survival_df))
+```
+
+
+```{r}
+# all(rownames(metadata) == rownames(cytometry_ER_C1))
+
+pops <-  c(
+  "M4_M1",
+  vars,
+"CD39+ / TCRgd+ (NK)",
+"NKG2a-CD94- / CD3 (CD8)",
+"NKG2a-CD94- / NKG2a- (CD8)",
+"FOXP3+CD8+ / CD3 (CD8)",
+"TCRgd+CD39+ / CD3 (NK)",
+"FOXP3+ / CD3-CD56+ (NK)"
+)
+
+cell_pop <- pops[1]
+
+# metadata$strata <- pull(metadata, !!sym(cat_var))
+
+median_value <- pull(tmp, cell_pop) %>% median(na.rm = TRUE)
+metadata$strata <- tmp %>%
+  mutate(strata = ifelse(!!sym(cell_pop) >= median_value, "High", "Low")) %>%
+  pull(strata) %>% as.factor()
+metadata$cell_pop <- pull(tmp, cell_pop)
+
+# metadata <- select(-cat_var)
+```
+
+
+```{r, eval = FALSE}
+metadata <- tmp %>%
+  select(c(colnames(metadata), pops))
+pop_vars <- paste0("`", pops, "`")
+form_str <- paste("Surv(survival, alive) ~", paste(pop_vars, collapse = " + "))
+form <- as.formula(form_str)
+fit3 <- coxph(form, data = metadata)
+
+map(pops, function(pop) {
+  metadata$cell_pop <- pull(tmp, pop)
+  coxph(Surv(survival, alive) ~ cell_pop, data = metadata) %>%
+  plot_hr(pop) + scale_x_log10() +
+    labs(x = NULL) +
+    theme(
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank()
+    )
+  # forest_model() +
+  #   ggtitle(str_wrap(pop, 30)) +
+  #   theme(
+  #   text = element_text(size = 5),
+  #   axis.text = element_text(size = 7),
+  #   plot.title = element_text(size = 9),
+  #   legend.text = element_text(size = 7)
+  # ) + GimmeMyPlot:::theme_custom()
+}) %>%
+plot_grid(plotlist = ., ncol = 4, align = "hv")
+
+map(pops, function(pop) {
+  median_value <- pull(tmp, pop) %>% median(na.rm = TRUE)
+  metadata$strata <- tmp %>%
+    mutate(strata = ifelse(!!sym(pop) >= median_value, "High", "Low")) %>%
+    pull(strata) %>%
+    as.factor()
+  
+  survfit(Surv(survival, alive) ~ strata, data = metadata) %>%
+    plot_survival(metadata, ncensor.plot = TRUE) +
+    ggtitle(str_wrap(pop, 30))
+}) -> p
+p2 <- map(p, function(x) x + labs(x = NULL, y = NULL) + theme(legend.position = "none"))
+p2[[1]] <- p[[1]]
+
+plot_grid(plotlist = p2, ncol = 4, align = "hv")
+
+tmp <- tmp %>%
+  mutate(across(
+    .cols = pops,
+    .fns = log10
+  ))
+```
+
+
+## QC
+```{r}
+metadata2 <- mutate(metadata, alive = factor(alive, labels = c("Alive", "Dead")))
+pull(metadata2, alive) %>%
+  fct_count() %>%  
+  set_colnames(c("Status", "N")) %>%
+  kable0()
+
+metadata2 %>%
+    group_by(alive) %>%
+    summarise(print_numeric(survival)) %>% 
+    select(-c("Variables", "Zeros", "NAs"))
+  
+metadata2 %>%
+    select(survival, alive) %>%
+    mutate(ID = rownames(.)) %>%
+    pivot_wider(names_from = alive, values_from = survival) %>%
+    column_to_rownames("ID") %>%
+      plot_violin(
+          title = "Days alive",
+          colour = GimmeMyPlot:::palette_discrete()[seq(2)],
+          cex = 1.2,
+          pch_size = 3,
+          pch_alpha = 0.25,
+          coef = 1.5,
+          label = TRUE,
+          breaks = c(0, .5 * 365, 365, 1.5 * 365, 2 * 365, 2.5 * 365),
+          func_label= label_date,
+          test = FALSE
+      )
+```
+
+```{r}
+(stats <- select(tmp, pops) %>%
+    print_numeric())
+  
+p <- list.map(
+  pops,
+  f(x, y) ~ {
+    tmp %>%
+    select(x) %>%
+    plot_violin(
+      colour  = GimmeMyPlot:::palette_continuous(gray = FALSE)(length(pops))[y],
+      # breaks = c(25, 50, 75),
+      label = TRUE,
+      title = format_cytometry(x),
+      digits = 2,
+      width_title = 30,
+      display_log = TRUE
+      
+    )
+  }
+)
+plot_grid(plotlist  = p[seq(12)], ncol = 4, align = "hv")
+
+library(dlookr)
+list.map(pops, ~plot_normality(tmp, .)) %>%
+  plot_grid(plotlist  = ., ncol = 4, align = "hv")
+```
+
+## Modelling
+### NULL model
+```{r}
+(fit0 <- survfit(Surv(survival, alive) ~ 1, data = metadata))
+plot_survival(fit0)
+```
+### Regression
+```{r}
+(fit3 <- coxph(Surv(survival, alive) ~ cell_pop, data = metadata))
+summary(fit3)
+# plot_survival(survfit(fit3))
+
+## HR statistics
+summary_hr(fit3, cell_pop)
+plot_hr(fit3, cell_pop)
+# forest_model(fit3)
+
+## Probabilities
+probs <- quantile(metadata$cell_pop, probs = c(0.25, 0.5, 0.75), na.rm = TRUE)
+data.frame(cell_pop = probs) %>%
+  survfit(fit3, newdata = .) %>%
+  ggsurvplot(
+    data = metadata,
+    legend.labs = paste0(cell_pop, " = ", round(probs, 1)),
+    palette = GimmeMyPlot:::palette_discrete(),
+    title = paste("Predicted survival curves according to", cell_pop)
+  )
+
+## Spline
+
+fit_ns <- coxph(Surv(survival, alive) ~ ns(cell_pop, df = 2), data = metadata) %>%
+  termplot(se = TRUE, plot = FALSE) %>%
+  pluck("cell_pop")
+
+# ggplot
+ggplot(fit_ns, aes(x = x, y = y)) +
+  geom_line(color = "blue", size = 1.2) +
+  geom_ribbon(aes(ymin = y - se, ymax = y + se), fill = "lightblue", alpha = 0.5) +
+  labs(
+    x = cell_pop,
+    y = "Partial effect on log(HR)",
+    title = paste("Non-linear effect of", cell_pop, "on survival")
+  ) +
+  GimmeMyPlot:::theme_custom() +
+  theme(
+      panel.background = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.grid.major =  element_line(color = "gray80", linewidth  = .5, linetype = "dashed")
+    )
+```
+```{r}
+test.ph <- cox.zph(fit3)
+print(test.ph)
+plot(test.ph)
+
+tmpp <- na.omit(metadata$cell_pop)
+
+resid_mart <- residuals(fit3, type = "martingale")
+plot(tmpp, resid_mart, pch = 20)
+lines(lowess(tmpp, resid_mart), col = "red", lwd = 2)
+
+dfbeta_vals <- residuals(fit3, type = "dfbeta")
+matplot(dfbeta_vals, type = "l")
+```
+
+### Classification
+```{r}
+(fit <- survfit(Surv(survival, alive) ~ strata, data = metadata))
+plot_survival(fit, ncensor.plot = TRUE)
+
+# median_survival <- median(pull(metadata, survival))
+median_survival <- metadata %>% 
+    summarize(median_surv = median(survival)) %>%
+    pull(median_surv)
+
+# summary(fit, time = 365.25)
+summary(fit, time = median_survival)
+# surv_summary(fit)
+
+metadata %>% 
+    group_by(alive) %>% 
+    summarize(median_surv = median(survival)) %>%
+    pull(median_surv)
+
+(fit2 <- survdiff(Surv(survival, alive) ~ strata, data = metadata))
+```
+
+```{r}
+pull(metadata2, strata) %>%
+  fct_count() %>%  
+  set_colnames(c("Status", "N")) %>%
+  kable0()
+```
+

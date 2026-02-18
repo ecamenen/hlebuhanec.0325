@@ -1,0 +1,386 @@
+---
+title: "PLS-DA"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{PLS-DA}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+## Setup
+```{r setup}
+# path <- golem::get_golem_wd()
+set.seed(1234)
+library(mixOmics)
+library(GimmeMyCluster)
+library(corrplot)
+select <- dplyr::select
+max_dim <- 4
+source(file.path(path, "R", "plot_cor.R"))
+```
+
+```{r}
+cytometry <- cytometry %>% filter(!rownames(.) %in% c("P00.2", "P11.10", "P11.16"))
+```
+
+## Modeling
+```{r}
+colGrp <- GimmeMyPlot:::palette_discrete()[seq_along(levels(Y))]
+func <- mixOmics::plsda
+# func <- pls
+res_plsda <- func(X, Y, ncomp = nrow(X) - 1)
+eig <- (res_plsda$prop_expl_var$X * 100)
+
+res_plsda2 <- PCA(X, ncp = max_dim, graph = FALSE)
+res_plsda2$eig[seq(res_plsda$ncomp), "percentage of variance"]  <- eig
+res_plsda2$ind$coord <- res_plsda$variates$X
+res_plsda2$ind$contrib <- res_plsda$variates$X
+res_plsda2$var$contrib <- res_plsda$loadings$X * 100
+res_plsda2$var$cos2 <- mcor_test(res_plsda$variates$X[, seq(max_dim)], res_plsda$X)
+
+res_plsda3 <- res_plsda
+res_plsda3$var$contrib <- mcor_test(res_plsda$variates$X[, seq(max_dim)], res_plsda$X)
+
+res_plsda4 <- func(X, Y, ncomp = max_dim)
+
+res_plsda5 <- res_plsda2
+res_plsda5$var$cos2 <- res_plsda$loadings$X * 100
+# use_data(res_plsda)
+```
+
+## Explained variance per dimension
+```{r}
+plot_eig(eig, "mean") + plot_eig(eig, "cum")
+cumsum(eig)[seq(max_dim)] %>% last() %>% round(1) %>% 
+paste("Cumulative variance on the first four dimensions:", .)
+```
+
+## Individuals
+```{r}
+corrplot(
+  t(res_plsda$variates$X[, seq(max_dim)]),
+  is.corr = FALSE,
+  col = colorRampPalette(c(rev(brewer.pal(3, "Blues")), "grey", brewer.pal(3, "Reds")))(100)
+)
+
+p <- plot_ctr(res_plsda2, max_dim = max_dim, n_max = 10)
+p[[1]] + p[[2]] + p[[3]] + p[[4]]
+
+if (res_plsda$mode != "regression") {
+  background.predict(res_plsda, comp.predicted = 2, dist = "max.dist") %>%
+    plotIndiv(res_plsda, ellipse = TRUE, background = .,  col.per.group = colGrp)
+} else {
+  plotIndiv(res_plsda, ellipse = TRUE,  col.per.group = colGrp)
+}
+plotIndiv(res_plsda, ellipse = TRUE, comp = c(3, 4),  col.per.group = colGrp)
+
+if (res_plsda$mode != "regression") {
+  ## Classification
+  p <- list.map(
+    list(seq(2), 3:4),
+    ~fviz_pca_ind(
+      res_plsda2,
+      # label = "none",
+      axes = .,
+      habillage = Y,
+      palette = GimmeMyPlot:::palette_discrete(),
+      addEllipses = TRUE, 
+      ellipse.type = "confidence",
+      ggtheme = theme_minimal(),
+      repel = TRUE
+  ) %>% theme_perso_2D() +
+      ggtitle(NULL)
+  )
+ } else {
+
+  res_plsda2$ind$cos2 <- matrix(rep(Y/2, max_dim), length(Y), max_dim)
+  
+  ## Regression
+  p <- list.map(
+    list(seq(2), 3:4),
+    ~fviz_pca_ind(
+      res_plsda2,
+      # label = "none",
+      col.ind = "cos2",
+      axes = .,
+      ggtheme = theme_minimal(),
+      repel = TRUE,
+      gradient.cols = colPers
+  ) %>% theme_perso_2D() +
+      ggtitle(NULL) +
+      labs(colour = "Survival")
+  )
+ }
+  p[[1]] + p[[2]] + theme(legend.position = "none")
+```
+
+## Variables
+```{r}
+# plotVar(res_plsda, comp = c(1,2), cex = 3, cutoff = 0.5, col = "#E41A1C")
+
+if (res_plsda$mode != "regression") {
+  p <- list.map(
+    seq(max_dim),
+    f(i) ~ plotLoadings(
+      res_plsda,
+      comp = i,
+      contrib = 'max',
+      method = 'median',
+      legend.color = colGrp,
+      plot = FALSE
+    ) %>%
+      plot_ctr_omics(n_max = 20, Y) +
+      ggtitle(paste("Dimension", i)) +
+      theme(legend.position = "none")
+  )
+  plot_grid(plotlist = p, ncol = 2, align = "hv")
+}
+
+# Ctr
+plot_ctr(res_plsda2, type = "var", max_dim = max_dim, cex = 0.7, width_text = 30) %>%
+  plot_grid(plotlist = ., ncol = 2, align = "hv")
+
+# Cor
+plot_ctr(res_plsda3, type = "var", max_dim = max_dim, cex = 0.7) %>%
+  plot_grid(plotlist = ., ncol = 2, align = "hv")
+
+ctr <- get_ctr(res_plsda2, max_dim = max_dim) %>% lapply(function(x) head(x, 12) %>% names())
+cor_var <- get_ctr(res_plsda3, max_dim = max_dim) %>% lapply(function(x) head(x, 7) %>% names())
+
+p <- list.map(
+  list(seq(2), 3:4),
+  fviz_pca_var(
+      res_plsda2,
+      axes = .,
+      col.var = "cos2",
+      repel = TRUE,
+      gradient.cols = rev(brewer.pal(11, "RdBu")),
+      # select.var = list(contrib = 20)
+      select.var = list(name = unlist(cor_var[.]))
+  ) %>% theme_perso_2D() + 
+    labs(colour = "Correlation") +
+    ggtitle(NULL)
+)
+p[[1]] + p[[2]]
+```
+
+## Clustering
+```{r, eval = FALSE}
+# x11() 
+cim(
+  res_plsda4,
+  row.sideColors = factor(Y, labels = colGrp),
+  clust.method = c("ward", "ward"),
+  margins = c(17, 3)
+)
+```
+
+## Biplot
+```{r}
+## Classification
+res_plsda$loadings$Y[, seq(max_dim)] %>% 
+  set_colnames(colnames(.) %>% str_to_title()) %>%
+  col_kable2(align = "c", digits = 2)
+
+p <- list.map(
+  list(seq(2), 3:4),
+  f(x, y) ~ 
+    biplot(
+  res_plsda,
+  cutoff = c(0.7, 0.65)[y],
+  comp = x,
+  col.per.group = colGrp,
+  var.names.col = "grey50",
+  var.names.size = 3,
+  vline =  TRUE,
+  hline = TRUE,
+  ellipse = TRUE
+) + 
+  theme(
+    axis.line = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title = element_text(face = "bold.italic", size = 17),
+    legend.position = "none"
+  ) + 
+  xlab(paste0("Dim. ", x[1], ": ", round(eig[x[1]], 1), "%")) + 
+  ylab(paste0("Dim. ", x[2], ": ", round(eig[x[2]], 1), "%"))
+)
+p[[1]] + p[[2]] + theme(legend.position = "none")
+```
+
+
+```{r}
+## Regression
+p <- list.map(
+  list(seq(2), 3:4),
+  f(x, y) ~ 
+    biplot(
+      res_plsda,
+      comp = x,
+      # group = Y,
+      cutoff = c(0.7, 0.65)[y],
+      var.names.col = "grey50",
+      var.names.size = 3,
+      vline =  TRUE,
+      hline = TRUE
+  ) + 
+    theme(
+      axis.line = element_blank(),
+      axis.text = element_blank(),
+      axis.ticks = element_blank(),
+      axis.title = element_text(face = "bold.italic", size = 17),
+      legend.position = "none"
+    ) + 
+    xlab(paste0("Dim. ", x[1], ": ", round(eig[x[1]], 1), "%")) + 
+    ylab(paste0("Dim. ", x[2], ": ", round(eig[x[2]], 1), "%")) #+ 
+    # scale_color_discrete(type = colorRampPalette(colPers)(length(Y)), name = "Survival" )
+)
+p[[1]] + p[[2]] + theme(legend.position = "none")
+```
+
+
+## Model evaluation
+### Classification
+```{r}
+predicted <- list.map(
+  seq(max_dim),
+  best_class(res_plsda, .)
+)
+
+l_probs <- list.map(
+  seq(max_dim),
+  {
+  res <- dist_centroids(res_plsda, .) %>%
+    t() %>%
+    as.data.frame() %>%
+    minmax()
+  1 - res
+  }
+)
+
+(l_conf <- list.map(
+  seq(max_dim),
+  f(x) ~confusionMatrix(as.factor(predicted[[x]]), Y))
+)
+
+conf <- l_conf[[1]]
+1 - conf$overall["Accuracy"] # ER
+mean(1 - conf$byClass[, "Sensitivity"]) # BER
+
+plot_auc_classes(l_probs[[1]], Y) %>%
+    plot_grid(plotlist = ., ncol = 2, align = "hv")
+
+l_probs[[1]] %>%
+  plot_probs(Y) %>%
+  plot_grid(plotlist = ., ncol = 2, align = "hv")
+
+## Top var per class
+ctr <- res_plsda$X %>%
+  getCtrVar(predicted[[1]] %>% as.factor() %>% as.numeric(), length(levels(Y))) %>%
+  t() %>%
+  as.data.frame() %>%
+  set_colnames(levels(Y)) %>%
+  apply(2, function(x) x / sum(x)) %>%
+  multiply_by(100)
+
+list.map(levels(Y), f(i) ~plot_ctr_classif(ctr, i, 100, digits = 2)) %>% 
+  plot_grid(plotlist = ., ncol = 2, align = "hv")
+```
+
+```{r}
+predicted_plsda <- predict(res_plsda4, X)
+predicted_plsda$centroids[, seq(max_dim)]
+
+predicted_comp <- predicted_plsda$class$centroids.dist[, seq(max_dim)]
+(l_conf <- list.map(
+  seq(max_dim),
+  f(x) ~confusionMatrix(as.factor(predicted_comp[, x]), Y))
+)
+
+predicted_plsda$predict[, , max_dim] %>%
+  minmax() %>%
+  plot_auc_classes(Y) %>%
+  plot_grid(plotlist = ., ncol = 2, align = "hv")
+predicted_plsda$B.hat
+conf <- l_conf[[max_dim]]
+
+predicted_plsda$predict[, , max_dim] %>%
+  plot_probs(Y) %>%
+  plot_grid(plotlist = ., ncol = 2, align = "hv")
+
+ctr <- res_plsda$X %>%
+  getCtrVar(predicted_plsda$class$centroids.dist[, max_dim] %>% as.factor() %>% as.numeric(), length(levels(Y))) %>%
+  t() %>%
+  as.data.frame() %>%
+  set_colnames(levels(Y)) %>%
+  apply(2, function(x) x / sum(x)) %>%
+  multiply_by(100)
+
+list.map(levels(Y), f(i) ~plot_ctr_classif(ctr, i, 100, digits = 2)) %>% 
+  plot_grid(plotlist = ., ncol = 2, align = "hv")
+
+levels(Y) %>% list.map(f(x) ~ctr[, x, drop = FALSE] %>% as.data.frame() %>% arrange(desc(!!sym(x))) %>% head(10) %>% rownames()) %>% plot_venn(color_gradient = "white")  + 
+    theme(legend.position = "none")
+
+res_plsda$loadings$X[, seq(max_dim)] %>% apply(1, function(x) sum(abs(x))) %>% sort(TRUE) %>% head(20)
+
+ctr_cum <- res_plsda$loadings$X[, seq(max_dim)] %>% apply(1, function(x) sum(abs(x)))
+ctr_cum %>% plot_bar(
+    cex = 0.8,
+    colour = c("#99000D", "gray"),
+    n_max = 15,
+    label_x = "value",
+    threshold  = 0,
+    digits = 2,
+    width_text = 40,
+    title = paste0("Dimension 1-", max_dim)
+)
+
+vars <- sort(ctr_cum, TRUE) %>% head(20) %>% names()
+```
+
+### Regression
+```{r}
+p <- list.map(
+    seq(max_dim),
+    f(x) ~plot_cor(Y, res_plsda$variates$X[, x], method = "pearson") +
+        labs(title = paste("Dim.", x), x = "Days alive", y = NULL) +
+        GimmeMyPlot:::theme_custom()
+)
+plot_grid(plotlist = p, ncol = 2, align = "hv")
+
+l_predicted <- list.map(
+  seq(max_dim),
+  rescale_from_df( res_plsda$variates$X[, .], Y)
+)
+
+predicted <- l_predicted[[1]]
+
+p <- list.map(
+  l_predicted,
+  f(x, y) ~{
+  residuals <- Y - unlist(x)
+  plot_bar(
+    as.data.frame(residuals),
+    cex = 0.8,
+    sample_size = max(Y, na.rm = TRUE),
+    # label_x = "value",
+    n_max = 15,
+    colour = c("#99000D", "gray"),
+    title = paste("Dim.", y),
+    sort ="asc",
+    abs = TRUE
+)
+    
+  }
+)
+plot_grid(plotlist = p, ncol = 2, align = "hv")
+```

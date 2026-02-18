@@ -1,0 +1,135 @@
+---
+title: "limma"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{limma}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+# Setup
+```{r setup}
+library(hlebuhanec.0325)
+library(GimmeMyOmics)
+library(limma)
+p_threshold <- 0.05
+fc_threshold <- log(1.5)
+na_threshold <- 0.5
+source(file.path(path, "R", "utils_omics.R"))
+```
+
+# DEA
+```{r}
+df <- X %>%
+  log1p()
+
+mad_vals <- apply(df, 1, mad, na.rm = TRUE)
+scaling_factors <- median(mad_vals) / mad_vals
+expr_norm <- df * scaling_factors
+```
+
+
+```{r}
+# Y_old <- Y
+name_level <- "HS"
+Y <- factor(ifelse(Y_old == name_level, name_level, "Other"), levels = c("Other", name_level))
+
+design <- model.matrix(~ 0 + Y)
+colnames(design) <- colnames(design) %>% str_remove_all("^Y")
+# design <- model.matrix(~ Y)
+head(design)
+
+fit0 <- lmFit(t(df), design)
+
+
+group_levels <- levels(Y)
+contrast_name <- paste(group_levels[2], "_vs_", group_levels[1], sep = "")
+contrast_formula <- paste(group_levels[2], "-", group_levels[1])
+
+contrast.matrix <- makeContrasts(contrasts = contrast_formula, levels = design)
+colnames(contrast.matrix) <- contrast_name
+
+
+fit0$coefficients %>% 
+  as.data.frame() %>% 
+  arrange(desc(abs(pick(starts_with("Y"))))) %>%
+  head() 
+
+
+fit <- contrasts.fit(fit0, contrast.matrix)
+fit <- eBayes(fit)
+```
+
+## Summary table
+```{r}
+(descr <- X %>% 
+    as.data.frame() %>%
+    mutate(group = Y) %>%
+    pivot_longer(!group) %>%
+    group_by(name, group) %>%
+    summarise(
+        mean = mean(value, na.rm = TRUE),
+        sd = sd(value, na.rm = TRUE),
+        n = length(which(!is.na(value)))
+    ) %>%
+    # filter(str_detect(name, paste(names(var0), collapse= "|")))  %>%
+    pivot_wider(names_from = group, values_from = c(mean, sd, n)) %>%
+    rename(gene_name = "name") %>% 
+    as.data.frame() #%>%
+    # mutate(diffFC = pull(., 3) - pull(., 2)) %>%
+    # mutate(FC = pull(., 3)/ pull(., 2) * sign(diffFC))
+)
+
+dea <- topTable(fit, coef = contrast_name, sort.by = "P", number = Inf, confint = TRUE) %>%
+    rownames_to_column("gene_name") %>% 
+    mutate(
+      description = gene_name,
+      logFC = exp(logFC) -1
+      ) %>%
+    format_limma(fc_threshold = fc_threshold, p_threshold = p_threshold)
+
+table(pull(dea, Expression))
+
+print_dea(dea, base = 1) %>%
+  select(-full_name) %>% 
+  rename(name = "alias") %>% 
+  kable0()
+```
+
+# Volcano plot
+```{r}
+(top_genes <- top_genes(
+    dea, 
+    fc_threshold = fc_threshold,
+    p_threshold = p_threshold, 
+    n = 15
+  )
+)
+
+volcano_plot(
+  dea,
+  top_genes = top_genes,
+  cex = 1, 
+  legend = "none",
+  title ="",
+  fc_threshold = fc_threshold,
+  p_threshold = p_threshold,
+  fc_log = 1,
+  max.overlaps = 100,
+  force = 100,
+  width = 30
+) +
+  ggtitle(paste(group_levels[1], "vs", group_levels[2]))
+```
+
+```{r}
+left_join(top_genes, descr, by = "gene_name")
+```
+

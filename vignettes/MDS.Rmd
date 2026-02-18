@@ -1,0 +1,66 @@
+---
+title: "MDS"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{MDS}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r}
+ncomp <- 4
+mds <- cmdscale(1 - rf$proximity, k = ncomp, eig = TRUE)
+```
+
+## Eigen plot
+```{r}
+plot_eig0(mds$eig, "Eigen value")
+```
+
+## Individual space
+```{r}
+eig <- (mds$eig / sum(mds$eig[mds$eig > 0]) * 100)
+
+dims <- 1:2
+plot_dimred(
+  mds$points[, dims] %>% 
+    trans_coord(add = Y_raw),
+  axis = paste("Dim.", dims),
+  eig = eig[dims],
+  ellipse = TRUE,
+  geom = "text",
+  max.overlaps = 100,
+  alpha = ifelse(rf$y == rf$predicted, 0.5, 1)
+) + labs(color = "Group")
+```
+
+## Variable contribution
+```{r}
+ctr <- sapply(seq(ncomp), function(i)
+  cor(select(X_raw, -to_remove), mds$points[, i], method = "spearman", use = "pairwise.complete.obs"))
+rownames(ctr) <- colnames(select(X_raw, -to_remove))
+
+p <- list.map(
+  seq(ncomp),
+  f(i) ~ plot_bar(
+    ctr[, i, drop = FALSE],
+    abs = TRUE,
+    n_max = 10,
+    label_x = "value",
+    threshold = 0,
+    colour = c("#99000D", "gray"),
+    title = paste("Dim.", i),
+    cex = 0.8,
+    width_text = 100,
+    digits = 2
+  )
+)
+plot_grid(plotlist = p[seq(2)], nrow = 2, align = "hv")
+```
