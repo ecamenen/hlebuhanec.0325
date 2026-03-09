@@ -6,6 +6,7 @@ find_dates <- function(x, sep = "/") {
   )
 }
 
+#' @export
 find_dates <- function(x, sep = "-") {
   x <- as.data.frame(x)
   colnames(x)[
@@ -44,6 +45,7 @@ kable0 <- function(x, align = "c", color = "#a9a9a9", ...) {
     column_spec(1, bold = TRUE, color = color)
 }
 
+#' @export
 age_pyramid <- function(x, years, sex, breaks = seq(0, 100, 10), colour = c("#3438a7", "#38bcbd")) {
   df_years <- mutate(
     x,
@@ -88,6 +90,7 @@ age_pyramid <- function(x, years, sex, breaks = seq(0, 100, 10), colour = c("#34
     )
 }
 
+#' @export
 plot_date <- function(x, date_breaks = "1 month", colour = "red", cex = 1, regex = "%Y-%m", func = ym, func2 = dmy, title = NULL, ...) {
   format_dates <- function(x) {
     months <- strftime(x, format = "%b") %>%
@@ -152,6 +155,7 @@ plot_date <- function(x, date_breaks = "1 month", colour = "red", cex = 1, regex
     p + geom_line(aes(group = 1), color = colour, lwd = 1)
 }
 
+#' @export
 label_date <- function(x) {
     sapply(x, function(val) {
       val <- abs(val)

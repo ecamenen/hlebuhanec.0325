@@ -1,0 +1,241 @@
+---
+title: "clinical_description"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{clinical_description}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "figures/clinical_description/",
+  fig.width = 12,
+  fig.height = 6,
+  dpi = 300
+)
+```
+
+```{r setup}
+library("hlebuhanec.0325")
+library("GimmeMyStats")
+library("GimmeMyPlot")
+library("RColorBrewer")
+library("rlist")
+library("ggrepel")
+library("kableExtra")
+data("clinic2")
+
+path_fig <- file.path(getwd(),  knitr::opts_chunk$get("fig.path"))
+```
+
+```{r}
+table(clinic2$groupe) %>%
+    enframe(name = "Group", value = "N") %>%
+    kable0()
+```
+# Demography
+```{r}
+p <- list.map(
+  unique(clinic2$groupe),
+  f(x) ~ {
+    res <- filter(clinic2, groupe == x) %>%
+    filter(!is.na(age), !is.na(sexe)) %>%
+    age_pyramid("age", "sexe", seq(0, 100, 10), colour = brewer.pal(4, "Paired")[3:4]) + 
+    ggtitle(x) +
+    theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+  plot(res)
+  }
+)
+
+# list.map(
+#   unique(clinic2$groupe),
+#   f(x) ~ filter(clinic2, groupe == x) %>%
+#       pull("sexe") %>%
+#     plot_pie(colour = brewer.pal(4, "Paired")[3:4],
+#       cex = 40,
+#       digits = 1,
+#       hsize = 1.5,
+#       title = paste0("Sex in ", x, " group"),
+#       legend = TRUE
+#   )
+# )
+
+plot_bar_2cat(
+  select(clinic2, "sexe", "groupe"),
+  sort = c("HD", "DA", "PN"),
+  stats = FALSE
+)
+filter(clinic2, is.na(sexe)) %>% select(patient)
+
+clinic2 %>%
+  select(age, groupe, patient) %>%
+  pivot_wider(names_from = groupe, values_from = age) %>%
+  column_to_rownames("patient") %>%
+  plot_violin(
+    colour = palette_discrete()[seq(3)],
+    cex = 1.2,
+    pch_size = 3,
+    pch_alpha = 0.25,
+    coef = 1.5,
+    breaks = c(25, 50, 75),
+    label = TRUE,
+    title = "Age"
+  )
+
+p <- clinic2 %>%
+    group_by(groupe) %>%
+    summarise(print_numeric(age)) %>% 
+    select(-c("Variables", "Kurtosis", "Skewness", "Normality"))
+p
+kable0(p) %>%
+  save_kable(file = file.path(path_fig, "stats_age.png"), zoom = 2)
+    
+
+filter(clinic2, is.na(age)) %>% 
+  select(patient)
+```
+
+```{r}
+list.map(
+  find_dates(clinic2),
+  f(x, y) ~{
+    if (y != 2){
+      regex <- "%Y-%m"
+    } else {
+      regex <- "%Y"
+    }
+    pull(clinic2, x) %>%
+      plot_date(
+        func2 = ymd, 
+        title = str_replace_all(x, "_", " ") %>% str_to_sentence(),
+        regex = regex
+      )
+  }
+)
+```
+
+```{r}
+list.map(
+  unique(clinic2$groupe),
+  f(i) ~ {
+    res <- filter(clinic2, groupe == i)
+  list.map(
+    find_dates(res),
+    f(x, y) ~{
+      if (y != 2){
+        regex <- "%Y-%m"
+      } else {
+        regex <- "%Y"
+      }
+      pull(res, x) %>%
+        plot_date(
+          func2 = ymd, 
+          title = paste(i, ":", str_replace_all(x, "_", " ") %>% str_to_sentence()),
+          regex = regex
+        )
+    }
+  )
+  }
+)
+```
+```{r}
+p <- list.map(
+  find_dates(clinic2)[-5],
+  f(x, y) ~ {
+clinic2 %>%
+    mutate(
+    years = pull(., x) %>% 
+        year() %>% as.character()
+)  %>%
+    select(years, groupe) %>%
+    plot_bar_2cat(
+        sort = c("HD", "DA", "PN"),
+        stats = FALSE,
+        title = str_replace_all(x, "_", " ") %>% str_to_sentence()
+    ) -> res
+    plot(res)
+  }
+)
+```
+
+```{r}
+p <- list.map(
+  find_dates(clinic2)[-5],
+  f(x, y) ~ {
+    print(x)
+    if(y %in% c(3, 4)) {
+      res <- filter(clinic2, groupe != "HD")
+    } else {
+      res <- clinic2
+    }
+    if (y == 1) {
+      res <- res %>%
+      mutate(
+        days = pull(., all_of(x)) %>% 
+        difftime(Sys.Date(), .) %>% 
+        as.numeric()
+        ) 
+    } else {
+      res <- res %>%
+      mutate(
+        days = pull(., all_of(x)) %>% 
+        difftime(pull(res, "date_inclusion"), ., units = "days") %>% 
+        as.numeric()
+        ) 
+    }
+    select(res, days, groupe, patient) %>%
+    pivot_wider(names_from = groupe, values_from = days) %>%
+    column_to_rownames("patient") %>%
+    plot_violin(
+      colour = palette_discrete()[seq(length(unique(pull(res, "groupe"))))],
+      cex = 1.2,
+      pch_size = 3,
+      pch_alpha = 0.25,
+      coef = 1.5,
+      label = TRUE,
+      width_text = 20,
+      title = str_replace_all(x, "_", " ") %>% str_to_sentence(),
+      func_label = label_date,
+      ratio_labs = 1
+    ) -> res
+    plot(res)
+  }
+)
+```
+
+```{r}
+clinic2 <- clinic2 %>%
+  mutate(
+    ethnie = factor(ethnie, levels = c(0, 1, 2), labels = c("Caucasian", "Asian", "African")),
+    da_pn = factor(da_pn, levels = c(0, 1), labels = c("No", "Yes"))
+         )
+  
+list.map(
+    c("ethnie", "da_pn"),
+    f(x) ~ {
+      mutate(clinic2, Group = !!sym(x)) %>%
+      select(Group, groupe) %>%
+      plot_bar_2cat(
+        sort = c("HD", "DA", "PN"),
+        stats = FALSE,
+        title = str_replace_all(x, "_", " ") %>% str_to_sentence()
+    )
+    }
+  )
+```
+
+```{r, eval = FALSE}
+numeric_variables <- select(clinic2, -all_of(date_variables)) %>% get_name_num()
+categorical_variables <- select(clinic2, -all_of(c(date_variables, numeric_variables)))
+
+df <-  df %>%
+  mutate(across(all_of(numeric_variables), ~ as.numeric(.)))
+```
+
+## Session information
+```{r end, echo = FALSE}
+sessionInfo()
+```
