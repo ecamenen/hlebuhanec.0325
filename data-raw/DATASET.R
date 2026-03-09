@@ -153,3 +153,43 @@ cytometry_fr <- filter(cytometry_raw, !str_detect(timepoint, "C")) %>%
   mutate(across(all_of(colnames(.)), ~ as.numeric(.)))
 
 use_data(cytometry_fr, overwrite = TRUE)
+
+###
+library("janitor")
+library("readxl")
+library("openxlsx")
+path_data <- file.path("C:", "Users", "etien", "DATA", "hlebuhanec")
+clinic2 <- read_xlsx(
+  file.path(path_data, "recueil Patients pruriseq a jour 2.xlsx"),
+  .name_repair = make_clean_names
+  ) %>%
+  select(-all_of(c("telephone", "mail", "adresse", "nom", "prenom", "x"))) %>%
+  mutate(
+    date_naissance = case_when(
+      date_naissance == "1" | date_naissance == 1 ~ NA_Date_,
+      grepl("^[0-9]+$", date_naissance) ~ convertToDate(as.numeric(date_naissance)),
+      grepl("^[0-9]{2}/[0-9]{2}/[0-9]{4}$", date_naissance) ~ as.Date(date_naissance, format = "%d/%m/%Y"),
+
+      grepl("^[0-9]{4}/[0-9]{4}$", date_naissance) ~ as.Date(paste0(substr(date_naissance, 1, 2), "/",
+                                                              substr(date_naissance, 3, 4), "/",
+                                                              substr(date_naissance, 6, 9)),
+                                                       format = "%d/%m/%Y"),
+
+      TRUE ~ NA_Date_
+    )
+  ) %>%
+  remove_empty() %>%
+  filter(str_detect(patient, "^(DA|HD|PN)")) %>%
+  mutate(groupe = str_extract(patient, "^.{2}")) %>%
+  relocate(groupe, .before = patient) %>%
+  mutate(across(everything(), ~ type.convert(., as.is = TRUE))) %>%
+  mutate(
+    sexe = factor(sexe, levels = c(0, 1), labels = c("M", "F")),
+    age = case_when(
+      age == 24645 ~ 67,
+      age == 28520 ~ 78,
+      TRUE ~ age
+    )
+  )
+
+use_data(clinic2, overwrite = TRUE)
