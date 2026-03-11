@@ -26,6 +26,7 @@ library("RColorBrewer")
 library("rlist")
 library("ggrepel")
 library("kableExtra")
+library("cowplot")
 data("clinic2")
 
 path_fig <- file.path(getwd(),  knitr::opts_chunk$get("fig.path"))
@@ -70,32 +71,55 @@ plot_bar_2cat(
 )
 filter(clinic2, is.na(sexe)) %>% select(patient)
 
-clinic2 %>%
-  select(age, groupe, patient) %>%
-  pivot_wider(names_from = groupe, values_from = age) %>%
+list.map(
+  c("age", "age_au_dg_an"),
+  f(x, y) ~ {
+    res <- clinic2 %>%
+  select(all_of(c(x, "groupe", "patient")))
+    if (y == 2)
+      res <- filter(res, groupe != "HD")
+  pivot_wider(res, names_from = groupe, values_from = !!sym(x)) %>%
   column_to_rownames("patient") %>%
   plot_violin(
-    colour = palette_discrete()[seq(3)],
+    colour = palette_discrete()[seq(length(unique(res$groupe)))],
     cex = 1.2,
     pch_size = 3,
     pch_alpha = 0.25,
     coef = 1.5,
     breaks = c(25, 50, 75),
     label = TRUE,
-    title = "Age"
+    title = ifelse(y < 2, "Age", "Age at diagnostic")
   )
+  }
+)
 
-p <- clinic2 %>%
+p <- list.map(
+  c("age", "age_au_dg_an"),
+    f(x, y) ~ {
+      if (y == 2)
+      res <- filter(clinic2, groupe != "HD") 
+      else
+        res <- clinic2
+      res %>%
     group_by(groupe) %>%
-    summarise(print_numeric(age)) %>% 
+    summarise(print_numeric(!!sym(x))) %>% 
     select(-c("Variables", "Kurtosis", "Skewness", "Normality"))
+    }
+  )
 p
-kable0(p) %>%
-  save_kable(file = file.path(path_fig, "stats_age.png"), zoom = 2)
-    
+
+list.map(
+  c("age", "age_au_dg_an"),
+  f(x) ~kable0(p[[x]]) %>%
+  save_kable(file = file.path(path_fig, paste0("stats_", x, ".png")), zoom = 2)
+)
 
 filter(clinic2, is.na(age)) %>% 
   select(patient)
+
+filter(clinic2, is.na(age_au_dg_an)) %>% 
+    filter(groupe != "HD") %>%
+    select(patient)
 ```
 
 ```{r}
@@ -184,7 +208,7 @@ p <- list.map(
         days = pull(., all_of(x)) %>% 
         difftime(pull(res, "date_inclusion"), ., units = "days") %>% 
         as.numeric()
-        ) 
+        )
     }
     select(res, days, groupe, patient) %>%
     pivot_wider(names_from = groupe, values_from = days) %>%
@@ -206,13 +230,210 @@ p <- list.map(
 )
 ```
 
+### Errors in age
 ```{r}
-clinic2 <- clinic2 %>%
-  mutate(
-    ethnie = factor(ethnie, levels = c(0, 1, 2), labels = c("Caucasian", "Asian", "African")),
-    da_pn = factor(da_pn, levels = c(0, 1), labels = c("No", "Yes"))
-         )
-  
+clinic2 %>%
+    mutate(
+        age_years = as.numeric(difftime(date_inclusion, date_naissance, units = "days")) / 365.25
+    ) %>% 
+    mutate(diff_age = age_years - age) %>% 
+    column_to_rownames("patient") -> res
+select(res, diff_age) %>%
+    plot_violin(label = TRUE)
+filter(res, abs(diff_age)  > 1.5) %>% select(date_naissance, age_years, age, diff_age) %>% kable0(digits = 1)
+```
+
+## Biologic
+```{r}
+list.map(
+  c("pne_mm3", "pnn", "monocytes", "cd4_micro_l", "cd8_micro_l", "ly_b_micro_l", "plaquettes", "creatinine", str_subset(colnames(clinic2), "ig_")),
+  f(x) ~ {
+    res <- clinic2 %>%
+      select(all_of(c(x, "groupe", "patient"))) %>%
+      filter(groupe != "HD")
+    all_na <- res %>%
+    group_by(groupe) %>%
+    summarise(all_na = all(is.na(!!sym(x)))) %>%
+    pull(all_na) %>%
+      any()
+    if(!all_na)
+    pivot_wider(res, names_from = groupe, values_from = !!sym(x)) %>%
+      column_to_rownames("patient") %>%
+      plot_violin(
+        colour = palette_discrete()[seq(length(unique(res$groupe)))],
+        cex = 1.2,
+        pch_size = 3,
+        pch_alpha = 0.25,
+        coef = 1.5,
+        label = TRUE,
+        title = str_replace_all(x, "_", " ") %>%
+          str_to_upper() %>%
+          str_replace_all("MICRO L", "\\(ml\\)") %>%
+          str_replace_all("MM3", "\\(mm3\\)") %>%
+          str_replace_all("IG", "Ig")
+      )
+  }
+)
+```
+
+## Scores
+```{r}
+list.map(
+  c("dlqi", str_subset(colnames(clinic2), "eva_")),
+  f(x, y) ~ {
+    print(y)
+    clinic2 %>%
+      select(all_of(c(x, "groupe", "patient"))) %>%
+      filter(groupe != "HD") %>%
+      pivot_wider(names_from = groupe, values_from = !!sym(x)) %>%
+      column_to_rownames("patient") %>%
+      plot_violin(
+        colour = palette_discrete()[seq(2)],
+        cex = 1.2,
+        pch_size = 3,
+        pch_alpha = 0.25,
+        coef = 1.5,
+        label = TRUE,
+        title = str_replace_all(x, "_", " ") %>%
+          str_to_upper() %>%
+          str_replace_all("POST TTT", "post-traitement") %>%
+          str_replace_all("PRURIT", "prurit")
+      )
+  }
+) %>%
+    plot_grid(plotlist = ., ncol = 3)
+
+list.map(
+  str_subset(colnames(clinic2), "easi_"),
+  f(x, y) ~ {
+    clinic2 %>%
+      select(all_of(c(x, "groupe", "patient"))) %>%
+      filter(groupe == "DA") %>%
+      pivot_wider(names_from = groupe, values_from = !!sym(x)) %>%
+      column_to_rownames("patient") %>%
+      plot_violin(
+        colour = palette_discrete()[2],
+        cex = 1.2,
+        pch_size = 3,
+        pch_alpha = 0.25,
+        coef = 1.5,
+        label = TRUE,
+        title = str_replace_all(x, "_", " ") %>%
+          str_to_upper() %>%
+          str_replace_all("POST TTT", "post-traitement")
+      )
+  }
+) %>%
+    plot_grid(plotlist = .)
+
+list.map(
+    str_subset(colnames(clinic2), "iga_"),
+    f(x, y) ~ {
+        p <- mutate(clinic2, Group = !!sym(x)) %>%
+            select(Group, groupe) %>%
+  mutate(across(everything(), ~ as.character(.))) %>%
+            filter(groupe != "HD") %>%
+            plot_bar_2cat(
+                sort = c("DA", "PN"),
+                colour = brewer.pal(6, "Reds")[-1],
+                colour_text = "black",
+                legend = clinic2$iga_da %>% levels(),
+                stats = FALSE,
+                threshold_pct = 15,
+                threshold = 1,
+                width_title = 20,
+                title = str_replace_all(x, "_", " ") %>%
+                  str_to_upper() %>%
+                  str_replace_all("POST TTT", "post-traitement")
+            )
+                if(y != 2)
+                  p + theme(legend.position = "none")
+                else
+                  p
+    }
+) %>%
+    plot_grid(plotlist = ., rel_widths = c(2, 2.75, 2))
+
+
+x <- "sc_atteinte_percent"
+clinic2 %>%
+  mutate(clinic2, Group = !!sym(x)) %>%
+  select(Group, groupe) %>%
+  mutate(across(everything(), ~ as.character(.))) %>%
+  plot_bar_2cat(
+    sort = c("DA", "PN"),
+    colour = brewer.pal(6, "Reds")[-1],
+    colour_text = "black",
+    legend = pull(clinic2, x) %>% levels(),
+    stats = FALSE,
+    threshold_pct = 15,
+    threshold = 1,
+    width_title = 20,
+    title = str_replace_all(x, "_", " ") %>% 
+      str_to_sentence() %>% 
+      str_replace_all("percent", "\\(%\\)")
+)
+```
+
+```{r}
+name_levels <- levels(clinic2$nb_nodules_pn)
+list.map(
+   str_subset(colnames(clinic2), "nb_nodules_"),
+    f(x) ~ {
+        mutate(clinic2, Group = !!sym(x)) %>%
+            filter(groupe == "PN") %>%
+            pull(Group) %>%
+      plot_pie(
+        colour = brewer.pal(length(name_levels +1), "Reds")[-1],
+        cex = 25,
+        digits = 1,
+        hsize = 1.5,
+        legend = name_levels,
+        title = str_replace_all(x, "_", " ") %>% str_to_sentence() %>%str_replace_all("pn", "PN")
+    )
+    }
+   
+) %>%
+    plot_grid(plotlist = ., nrow = 2, align = "hv")
+```
+
+```{r, eval = FALSE}
+menopause
+sc_atteinte_percent
+```
+
+
+```{r}
+clinic2 <- mutate(clinic2, pbmc = pmbc)
+list.map(
+    c("pbmc", "serum", "plasma", "biopsie", "numeration", "swab") %>%
+      c("dsq", ., paste0(., "_post_ttt"), "dsquame_post_ttt"),
+    f(x) ~ {
+        mutate(clinic2, Group = !!sym(x)) %>%
+            select(Group, groupe) %>%
+        
+            filter(groupe != "HD") %>%
+            plot_bar_2cat(
+                sort = c("DA", "PN"),
+                legend = c("Yes", "No"),
+                colour = palette_discrete()[c(3, 1)],
+                colour_text = "black",
+                stats = FALSE,
+                threshold_pct = 10,
+                threshold = 1,
+                width_title = 20,
+                title = str_replace_all(x, "_", " ") %>% str_to_sentence() %>%str_replace_all("POST TTT", "post-traitement")
+            )
+    }
+) %>%
+    plot_grid(plotlist = ., ncol = 7)
+# TODO: heatmap
+```
+
+```{r}
+select(clinic2, ethnie, phototype) %>%
+  plot_alluvial()
+
 list.map(
     c("ethnie", "da_pn"),
     f(x) ~ {
@@ -222,17 +443,41 @@ list.map(
         sort = c("HD", "DA", "PN"),
         stats = FALSE,
         title = str_replace_all(x, "_", " ") %>% str_to_sentence()
-    )
+      )
     }
-  )
+  ) %>%
+  plot_grid(plotlist = ., align = "hv")
 ```
 
-```{r, eval = FALSE}
-numeric_variables <- select(clinic2, -all_of(date_variables)) %>% get_name_num()
-categorical_variables <- select(clinic2, -all_of(c(date_variables, numeric_variables)))
+## Atopie
+```{r}
+list.map(
+    c("terrain_atopique", "asthme", "da", "rhinite_allergique", "conjonctivite_allergique", "terrain_atopique_fam_1er_degre"),
+    f(x) ~ {
+      mutate(clinic2, Group = !!sym(x)) %>%
+  mutate(across(everything(), ~ as.character(.))) %>%
+      select(Group, groupe) %>%
+      plot_bar_2cat(
+        sort = c("HD", "DA", "PN"),
+        stats = FALSE,
+        width_title = 20,
+        pct = FALSE,
+        title = str_replace_all(x, "_", " ") %>% str_to_sentence()
+      )
+    }
+  ) %>%
+  plot_grid(plotlist = ., align = "hv")
 
-df <-  df %>%
-  mutate(across(all_of(numeric_variables), ~ as.numeric(.)))
+mutate(clinic2, `.terrain_atopique` = terrain_atopique) %>%
+  select(.terrain_atopique, terrain_atopique_fam_1er_degre, da, terrain_atopique) %>%
+  rename_with(
+    ~ .x %>%
+      str_replace_all("_", " ") %>%
+      str_to_sentence()
+  ) %>%
+  plot_alluvial()
+
+# TODO: heatmap
 ```
 
 ## Session information
