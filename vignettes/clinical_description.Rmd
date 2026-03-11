@@ -37,7 +37,8 @@ table(clinic2$groupe) %>%
     enframe(name = "Group", value = "N") %>%
     kable0()
 ```
-# Demography
+
+## Demography
 ```{r}
 p <- list.map(
   unique(clinic2$groupe),
@@ -122,9 +123,11 @@ filter(clinic2, is.na(age_au_dg_an)) %>%
     select(patient)
 ```
 
+## Timelines
 ```{r}
+date_variables <- find_dates(clinic2)
 list.map(
-  find_dates(clinic2),
+  date_variables,
   f(x, y) ~{
     if (y != 2){
       regex <- "%Y-%m"
@@ -133,7 +136,7 @@ list.map(
     }
     pull(clinic2, x) %>%
       plot_date(
-        func2 = ymd, 
+        func = ymd,
         title = str_replace_all(x, "_", " ") %>% str_to_sentence(),
         regex = regex
       )
@@ -147,7 +150,7 @@ list.map(
   f(i) ~ {
     res <- filter(clinic2, groupe == i)
   list.map(
-    find_dates(res),
+    date_variables,
     f(x, y) ~{
       if (y != 2){
         regex <- "%Y-%m"
@@ -156,7 +159,7 @@ list.map(
       }
       pull(res, x) %>%
         plot_date(
-          func2 = ymd, 
+          func = ymd,
           title = paste(i, ":", str_replace_all(x, "_", " ") %>% str_to_sentence()),
           regex = regex
         )
@@ -165,9 +168,10 @@ list.map(
   }
 )
 ```
+
 ```{r}
 p <- list.map(
-  find_dates(clinic2)[-5],
+  date_variables[-5],
   f(x, y) ~ {
 clinic2 %>%
     mutate(
@@ -178,7 +182,8 @@ clinic2 %>%
     plot_bar_2cat(
         sort = c("HD", "DA", "PN"),
         stats = FALSE,
-        title = str_replace_all(x, "_", " ") %>% str_to_sentence()
+        title = str_replace_all(x, "_", " ") %>%
+          str_to_sentence()
     ) -> res
     plot(res)
   }

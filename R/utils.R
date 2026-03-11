@@ -117,7 +117,7 @@ age_pyramid <- function(x, years, sex, breaks = seq(0, 100, 10), colour = c("#34
 }
 
 #' @export
-plot_date <- function(x, date_breaks = "1 month", colour = "red", cex = 1, regex = "%Y-%m", func = ym, func2 = dmy, title = NULL, ...) {
+plot_date <- function(x, date_breaks = "1 month", colour = "red", cex = 1, regex = "%Y-%m", func = dmy, title = NULL, ...) {
   format_dates <- function(x) {
     months <- strftime(x, format = "%b") %>%
       str_to_upper() %>%
@@ -129,10 +129,14 @@ plot_date <- function(x, date_breaks = "1 month", colour = "red", cex = 1, regex
       false = months
     )
   }
-  if (regex == "%Y") {
-    func <- identity
-  }
-  dates <- func2(x) %>% tibble(date = .)
+  func2 <- switch(
+    regex,
+    "%Y"        = identity,
+    "%Y-%m"     = ym,
+    "%Y-%m-%d"  = ymd,
+    ym
+  )
+  dates <- func(x) %>% tibble(date = .)
   # dates <- mutate(
   #     dates,
   #     year = year(date),
@@ -142,7 +146,7 @@ plot_date <- function(x, date_breaks = "1 month", colour = "red", cex = 1, regex
   x0 <- format(dates$date, regex) %>%
     fct_count() %>%
     filter(!is.na(f)) %>%
-    mutate(f = func(f))
+    mutate(f = func2(f))
   # days <- as.factor(dates$date) %>%
   #     fct_count() %>%
   #     mutate(f = as.Date(f)) %>%
