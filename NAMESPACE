@@ -2,6 +2,10 @@
 
 export(age_pyramid)
 export(find_dates)
+export(get_binomial)
+export(get_binomial2)
+export(get_multinomial)
+export(get_name_num)
 export(label_date)
 export(plot_date)
 import(GimmeMyPlot)

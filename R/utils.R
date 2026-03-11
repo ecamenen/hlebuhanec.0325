@@ -17,6 +17,7 @@ find_dates <- function(x, sep = "-") {
   ]
 }
 
+#' @export
 get_name_num <- function(x) {
   x <- as.data.frame(x)
   colnames(x)[
@@ -38,11 +39,36 @@ get_name_num <- function(x) {
 }
 
 
-kable0 <- function(x, align = "c", color = "#a9a9a9", ...) {
+#' @export
+get_binomial <- function(x) {
   x %>%
-    kbl(escape = FALSE, align = c("l", rep(align, ncol(x) -1)), ...) %>%
-    kable_minimal(full_width = FALSE) %>%
-    column_spec(1, bold = TRUE, color = color)
+    select(where(~ {
+      is.integer(.x) &&
+        all(.x[!is.na(.x)] %in% c(0, 1))
+    })) %>%
+    names()
+}
+
+#' @export
+get_binomial2 <- function(x) {
+  x %>%
+    select(where(~ {
+      is.integer(.x) &&
+        length(unique(.x[!is.na(.x)])) <= 2
+    })) %>%
+    names()
+}
+
+#' @export
+get_multinomial <- function(x, n_levels = 12, max_value = 20) {
+  x %>%
+    select(where(~ {
+      is.integer(.x) &&
+        length(unique(.x[!is.na(.x)])) > 2 &&
+        length(unique(.x[!is.na(.x)])) <= n_levels &&
+        max(.x[!is.na(.x)]) <= max_value
+    })) %>%
+    names()
 }
 
 #' @export
