@@ -180,7 +180,7 @@ clinic2 <- read_xlsx(
   ) %>%
   remove_empty() %>%
   filter(str_detect(patient, "^(DA|HD|PN)")) %>%
-  mutate(groupe = str_extract(patient, "^.{2}")) %>%
+  mutate(groupe = str_extract(patient, "^.{2}") %>% as.factor()) %>%
   relocate(groupe, .before = patient) %>%
   mutate(across(everything(), ~ type.convert(., as.is = TRUE))) %>%
   mutate(
@@ -191,5 +191,57 @@ clinic2 <- read_xlsx(
       TRUE ~ age
     )
   )
+
+date_variables <- find_dates(clinic2)
+clinic2 <- clinic2 %>%
+  mutate(across(all_of(date_variables), ~ ymd(.)))
+
+var_binomial <- get_binomial(clinic2)
+
+clinic2 <- clinic2 %>%
+  mutate(
+    across(var_binomial, ~ factor(., levels = c(0, 1), labels = c("No", "Yes")))
+  )
+
+remaining_binomial <- setdiff(get_binomial2(clinic2), var_binomial)
+var_multinomial <- get_multinomial(clinic2)
+
+clinic2 <- clinic2 %>%
+  mutate(
+    phototype = as.factor(phototype),
+    ethnie = factor(ethnie, levels = 0:2, labels = c("Caucasian", "Asian", "African")),
+    sc_atteinte_percent = factor(sc_atteinte_percent, levels = 0:4, c("0%", "< 5%", "5-30%", "30-50%", "> 50%")),
+    across(starts_with("iga"), ~ factor(., levels = 0:4, labels = c("Absence", "Légère", "Modérée", "Sévère", "Très sévère"))),
+    across(starts_with("nb_nodules"), ~ factor(., levels = 0:3, labels = c("0", "< 10", "10-50", "> 50")))
+  )
+
+t_binomial <- list.map(
+  var_binomial,
+  f(x) ~ select(clinic2, x) %>%
+    print_binomial()
+)
+t_multinomial <- list.map(
+  c(remaining_binomial, var_multinomial),
+  f(x) ~ select(clinic2, x) %>%
+    print_multinomial(format = FALSE, sort = FALSE)
+)
+
+t_cat <- c(t_binomial, t_multinomial) %>%
+  list.rbind() %>%
+  mutate(Variables = str_replace_all(Variables, "_", " ") %>% str_to_sentence())
+
+cat_variables <- sapply(clinic2, is.factor) %>% names(.)[.]
+numeric_variables <- select(clinic2, -all_of(c(cat_variables))) %>% get_name_num()
+clinic2 <-  clinic2 %>%
+  mutate(across(all_of(numeric_variables), ~ as.numeric(.)))
+other_variables <- select(clinic2, -all_of(c(date_variables, cat_variables, numeric_variables))) %>%
+  colnames()
+
+list.map(
+  other_variables,
+  f(x) ~ pull(clinic2, x) %>%
+    unique() %>%
+    head()
+)
 
 use_data(clinic2, overwrite = TRUE)
