@@ -503,6 +503,64 @@ mutate(clinic2, `.terrain_atopique` = terrain_atopique) %>%
 # TODO: heatmap
 ```
 
+## Missing variables
+```{r}
+vis_miss(clinic2) + 
+    theme(
+    axis.text.x = element_blank(),
+    panel.grid = element_blank()
+)
+
+df_sub <- clinic2 %>%
+  filter(groupe != "HD") %>%
+  column_to_rownames("patient") %>%
+    set_colnames(
+      colnames(.) %>% 
+        str_replace_all("_", " ") %>%
+        to_title()
+      )
+
+p <- plot_outliers2(
+  df_sub,
+  cex = .1,
+  all = TRUE,
+  sort = "asc",
+  width_text = 50,
+  factor(df_sub$Groupe, labels = palette_discrete()[seq(2)]),
+)
+plot_outliers2(
+    df_sub,
+    cex = .8,
+    n_max = 35,
+    width_text = 50,
+    label_y = "percent",
+    factor(df_sub$Groupe, labels = palette_discrete()[seq(2)]),
+    threshold1 = 61,
+    threshold2 = 42
+)
+p2 <- plot_outliers(df_sub, cex = 8, n_max = 20)
+
+list.map(
+  list(p, p2),
+  f(x) ~
+    filter(clinic2, patient %in% names(head(x))) %>%
+  select(patient, sexe, age, ethnie) %>% 
+  kable0()
+)
+
+res <- extract_rare(df_sub) %>% 
+    map(~ .x %>% filter(!rownames(.x) %in% "PN09")) %>%
+    keep(function(x) nrow(x) > 0) %>%
+    map(print_multinomial) %>%
+    list.rbind()
+
+res %>% 
+    filter(!is.na(Levels)) %>%
+    pull(Variables) %>% unique()
+
+select(clinic2, all_of(get_binomial2(clinic2))) %>% print_binomial()
+```
+
 ## Session information
 ```{r end, echo = FALSE}
 sessionInfo()

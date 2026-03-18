@@ -501,3 +501,137 @@ format_auto <- function(x, digits = 2, sci_thresh = 1e4) {
     formatC(x, format = "f", digits = digits)
   )
 }
+
+#' @export
+plot_outliers2 <- function(df_sub, colour  = rev(brewer.pal(9, "Reds")[-seq(2)]), label_x = "value", all = FALSE, threshold1 = Inf, threshold2 = Inf, ...) {
+  p <- list()
+
+  p[[1]] <- apply(df_sub, 2, function(x) (is.na(x)) %>% which() %>% length()) %>%
+    .[. != 0] %>%
+    .[. <= threshold1] %>%
+    plot_bar(
+      sample_size = nrow(df_sub),
+      colour = rev(brewer.pal(9, "Reds")[-seq(2)]),
+      label_x = label_x,
+      ...
+    ) +
+    ggtitle(NULL)
+
+  if (isTRUE(all)) {
+    p[[1]] <- p[[1]] +
+    geom_hline(
+      yintercept = nrow(df_sub)/2,
+      linetype = "dashed",
+      linewidth = 1
+    )
+  }
+
+  res <- apply(df_sub, 1, function(x) (is.na(x)) %>% which() %>% length()) %>%
+    .[. > 1] %>%
+    .[. <= threshold2]
+  p[[2]] <- res %>%
+    plot_bar(
+      sample_size = ncol(df_sub),
+      colour = colour[which(rownames(df_sub) %in% names(res))],
+      label_x = label_x,
+      ...
+    )+
+    ggtitle(NULL)
+
+  if (isTRUE(all)) {
+    p[[2]] <- p[[2]] +
+      geom_hline(
+        yintercept = nrow(df_sub)/2,
+        linetype = "dashed",
+        linewidth = 1
+      )
+  }
+
+  plot_grid(plotlist = p) %>% plot()
+  return(sort(res, decreasing = TRUE))
+}
+
+#' @export
+plot_outliers <- function(df, n_max = 15, ...) {
+  p2 <- list()
+  categorical_variables <- df %>%
+    select(where(is.factor)) %>%
+    names()
+  numeric_variables <- df  %>%
+    select(-categorical_variables) %>%
+    get_name_num(.)
+  l_outliers <- select(df, numeric_variables) %>%
+    list.map(
+      f(x, y, z) ~
+        select(df, z) %>%
+        filter(!is.na(!!sym(z))) %>%
+        identify_outliers(method = "sd") %>%
+        names()
+    ) %>%
+    unlist()
+  p2[[1]] <- plot_bar_mcat(
+    l_outliers,
+    n_max = n_max,
+    sample_size = (length(numeric_variables)),
+    ...
+  ) + ggtitle(NULL)
+
+ l_rare <- extract_rare(df) %>%
+   map(rownames) %>%
+   unlist()
+
+  p2[[2]] <- plot_bar_mcat(
+    l_rare,
+    n_max = n_max,
+    sample_size = length(categorical_variables),
+    ...
+  ) + ggtitle(NULL)
+
+  p2[[3]] <- plot_bar_mcat(
+    c(l_rare, l_outliers),
+    n_max = n_max,
+    sample_size = length(categorical_variables) +
+      length(numeric_variables),
+    ...
+  ) + ggtitle(NULL)
+
+  plot_grid(plotlist = p2, ncol = 3) %>% plot()
+  return(
+    c(l_rare, l_outliers) %>%
+      fct_count() %>%
+      arrange(desc(n)) %>%
+      select(f, n) %>%
+      pull(n, f)
+    )
+}
+
+%>%
+  select(.x$Variables)
+
+#' @export
+extract_rare <- function(df, threshold = 5) {
+  categorical_variables <- df %>%
+    select(where(is.factor)) %>%
+    names()
+
+  tmp <- select(df, categorical_variables) %>%
+    mutate(across(where(is.factor), as.character))
+
+  tab_stats <- list.map(tmp, f(x, x, z) ~ select(tmp, z) %>% print_multinomial()) %>%
+    list.rbind()
+
+  mutate(
+    tab_stats,
+    N = str_remove_all(Statistics, " \\(.*") %>% as.numeric()) %>%
+    filter(N < threshold) %>%
+    split(., seq(nrow(.))) %>%
+    map(~ tmp %>%
+          filter(
+            if (is.na(.x$Levels))
+              is.na(!!sym(.x$Variables[[1]]))
+            else
+              !!sym(.x$Variables[[1]]) == .x$Levels[[1]]
+          ) %>%
+          select(.x$Variables[[1]])
+    )
+}
