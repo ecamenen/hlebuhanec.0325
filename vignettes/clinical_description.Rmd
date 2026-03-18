@@ -271,7 +271,31 @@ list.map(
           str_replace_all("IG", "Ig")
       )
   }
-)
+) %>%
+  compact() %>%
+  plot_grid(plotlist = ., ncol = 4)
+```
+
+```{r}
+vars <- c("pne_mm3", "pnn", "monocytes", "cd4_micro_l", "cd8_micro_l", "ly_b_micro_l", "plaquettes", "creatinine", str_subset(colnames(clinic2), "ig_"))
+p <- list.map(
+  vars,
+    f(x) ~ {
+    filter(clinic2, groupe != "HD") %>%
+      filter(!is.na(!!sym(x))) %>%
+      group_by(groupe) %>%
+      summarise(print_numeric(!!sym(x))) %>% 
+      select(-c("Variables", "Kurtosis", "Skewness", "Normality")) %>%
+        mutate(Variable = x) %>%
+        relocate(Variable)
+    }
+  ) %>% 
+  compact() %>%
+  list.rbind()
+p
+
+kable0(p) %>%
+  save_kable(file = file.path(path_fig, "stats_biol.png"), zoom = 2)
 ```
 
 ## Scores
