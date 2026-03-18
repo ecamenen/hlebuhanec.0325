@@ -285,10 +285,14 @@ kable0(p) %>%
 
 ## Scores
 ```{r}
+func_format <- function(x) {
+  str_replace_all(x, "_", " ") %>%
+          str_to_upper() %>%
+          str_replace_all("POST TTT", "post-traitement")
+}
 list.map(
   c("dlqi", str_subset(colnames(clinic2), "eva_")),
   f(x, y) ~ {
-    print(y)
     clinic2 %>%
       select(all_of(c(x, "groupe", "patient"))) %>%
       filter(groupe != "HD") %>%
@@ -301,10 +305,7 @@ list.map(
         pch_alpha = 0.25,
         coef = 1.5,
         label = TRUE,
-        title = str_replace_all(x, "_", " ") %>%
-          str_to_upper() %>%
-          str_replace_all("POST TTT", "post-traitement") %>%
-          str_replace_all("PRURIT", "prurit")
+        title = func_format(x)
       )
   }
 ) %>%
@@ -325,9 +326,7 @@ list.map(
         pch_alpha = 0.25,
         coef = 1.5,
         label = TRUE,
-        title = str_replace_all(x, "_", " ") %>%
-          str_to_upper() %>%
-          str_replace_all("POST TTT", "post-traitement")
+        title = func_format(x)
       )
   }
 ) %>%
@@ -394,7 +393,9 @@ list.map(
         digits = 1,
         hsize = 1.5,
         legend = rev(name_levels),
-        title = str_replace_all(x, "_", " ") %>% str_to_sentence() %>%str_replace_all("pn", "PN")
+        title = str_replace_all(x, "_", " ") %>%
+          str_to_sentence() %>%
+          str_replace_all("pn", "PN")
     )
     }
    
@@ -404,9 +405,7 @@ list.map(
 
 ```{r, eval = FALSE}
 menopause
-sc_atteinte_percent
 ```
-
 
 ```{r}
 clinic2 <- mutate(clinic2, pbmc = pmbc)
@@ -426,7 +425,7 @@ list.map(
                 threshold_pct = 10,
                 threshold = 1,
                 digits = 0,
-                title = str_replace_all(x, "_", " ") %>% str_to_sentence() %>%str_replace_all("POST TTT", "post-traitement")
+                title = func_format(x)
             )
         if(!y %in% c(4, 11)) {
           p + theme(legend.position = "none")
@@ -549,8 +548,6 @@ res <- extract_rare(df_sub) %>%
 res %>% 
     filter(!is.na(Levels)) %>%
     pull(Variables) %>% unique()
-
-select(clinic2, all_of(get_binomial2(clinic2))) %>% print_binomial()
 ```
 
 ## Session information
