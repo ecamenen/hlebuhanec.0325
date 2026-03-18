@@ -27,6 +27,8 @@ library("rlist")
 library("ggrepel")
 library("kableExtra")
 library("cowplot")
+library("janitor")
+library("naniar")
 data("clinic2")
 
 path_fig <- file.path(getwd(),  knitr::opts_chunk$get("fig.path"))
@@ -39,8 +41,8 @@ table(clinic2$groupe) %>%
 ```
 
 ## Demography
-```{r}
-p <- list.map(
+```{r, fig.width = 16, fig.height = 8}
+list.map(
   unique(clinic2$groupe),
   f(x) ~ {
     res <- filter(clinic2, groupe == x) %>%
@@ -49,22 +51,11 @@ p <- list.map(
     ggtitle(x) +
     theme(plot.title = element_text(hjust = 0.5, face = "bold"))
   plot(res)
-  }
-)
+  }) %>%
+  plot_grid(plotlist = ., ncol = 3)
+```
 
-# list.map(
-#   unique(clinic2$groupe),
-#   f(x) ~ filter(clinic2, groupe == x) %>%
-#       pull("sexe") %>%
-#     plot_pie(colour = brewer.pal(4, "Paired")[3:4],
-#       cex = 40,
-#       digits = 1,
-#       hsize = 1.5,
-#       title = paste0("Sex in ", x, " group"),
-#       legend = TRUE
-#   )
-# )
-
+```{r}
 plot_bar_2cat(
   select(clinic2, "sexe", "groupe"),
   sort = c("HD", "DA", "PN"),
@@ -92,7 +83,8 @@ list.map(
     title = ifelse(y < 2, "Age", "Age at diagnostic")
   )
   }
-)
+) %>%
+  plot_grid(plotlist = ., ncol = 2)
 
 p <- list.map(
   c("age", "age_au_dg_an"),
@@ -104,16 +96,17 @@ p <- list.map(
       res %>%
     group_by(groupe) %>%
     summarise(print_numeric(!!sym(x))) %>% 
-    select(-c("Variables", "Kurtosis", "Skewness", "Normality"))
+    select(-c("Variables", "Kurtosis", "Skewness", "Normality")) %>%
+        mutate(Variable = x) %>%
+        relocate(Variable)
     }
-  )
+  ) %>% 
+  compact() %>%
+  list.rbind()
 p
 
-list.map(
-  c("age", "age_au_dg_an"),
-  f(x) ~kable0(p[[x]]) %>%
-  save_kable(file = file.path(path_fig, paste0("stats_", x, ".png")), zoom = 2)
-)
+kable0(p) %>%
+  save_kable(file = file.path(path_fig, paste0("stats_age.png"), zoom = 2))
 
 filter(clinic2, is.na(age)) %>% 
   select(patient)
@@ -169,8 +162,8 @@ list.map(
 )
 ```
 
-```{r}
-p <- list.map(
+```{r, fig.width = 20, fig.height = 10}
+list.map(
   date_variables[-5],
   f(x, y) ~ {
 clinic2 %>%
@@ -182,12 +175,12 @@ clinic2 %>%
     plot_bar_2cat(
         sort = c("HD", "DA", "PN"),
         stats = FALSE,
+        threshold_pct = 10,
         title = str_replace_all(x, "_", " ") %>%
           str_to_sentence()
     ) -> res
-    plot(res)
   }
-)
+) %>% plot_grid(plotlist = ., ncol = 2)
 ```
 
 ```{r}
@@ -249,7 +242,7 @@ filter(res, abs(diff_age)  > 1.5) %>% select(date_naissance, age_years, age, dif
 ```
 
 ## Biologic
-```{r}
+```{r, fig.width = 23, fig.height = 10}
 list.map(
   c("pne_mm3", "pnn", "monocytes", "cd4_micro_l", "cd8_micro_l", "ly_b_micro_l", "plaquettes", "creatinine", str_subset(colnames(clinic2), "ig_")),
   f(x) ~ {
@@ -336,13 +329,12 @@ list.map(
     f(x, y) ~ {
         p <- mutate(clinic2, Group = !!sym(x)) %>%
             select(Group, groupe) %>%
-  mutate(across(everything(), ~ as.character(.))) %>%
             filter(groupe != "HD") %>%
             plot_bar_2cat(
                 sort = c("DA", "PN"),
-                colour = brewer.pal(6, "Reds")[-1],
+                colour = brewer.pal(6, "Reds")[-1] %>% rev(),
                 colour_text = "black",
-                legend = clinic2$iga_da %>% levels(),
+                legend = clinic2$iga_da %>% levels() %>% rev(),
                 stats = FALSE,
                 threshold_pct = 15,
                 threshold = 1,
@@ -364,12 +356,11 @@ x <- "sc_atteinte_percent"
 clinic2 %>%
   mutate(clinic2, Group = !!sym(x)) %>%
   select(Group, groupe) %>%
-  mutate(across(everything(), ~ as.character(.))) %>%
   plot_bar_2cat(
     sort = c("DA", "PN"),
-    colour = brewer.pal(6, "Reds")[-1],
+    colour = brewer.pal(6, "Reds")[-1] %>% rev(),
     colour_text = "black",
-    legend = pull(clinic2, x) %>% levels(),
+    legend = pull(clinic2, x) %>% levels() %>% rev(),
     stats = FALSE,
     threshold_pct = 15,
     threshold = 1,
@@ -389,11 +380,11 @@ list.map(
             filter(groupe == "PN") %>%
             pull(Group) %>%
       plot_pie(
-        colour = brewer.pal(length(name_levels +1), "Reds")[-1],
+        colour = brewer.pal(length(name_levels) + 1, "Reds")[-1] %>% rev(),
         cex = 25,
         digits = 1,
         hsize = 1.5,
-        legend = name_levels,
+        legend = rev(name_levels),
         title = str_replace_all(x, "_", " ") %>% str_to_sentence() %>%str_replace_all("pn", "PN")
     )
     }
@@ -435,10 +426,12 @@ list.map(
 # TODO: heatmap
 ```
 
-```{r}
+```{r, fig.width = 8, fig.height = 3.7}
 select(clinic2, ethnie, phototype) %>%
   plot_alluvial()
+```
 
+```{r}
 list.map(
     c("ethnie", "da_pn"),
     f(x) ~ {
@@ -460,7 +453,6 @@ list.map(
     c("terrain_atopique", "asthme", "da", "rhinite_allergique", "conjonctivite_allergique", "terrain_atopique_fam_1er_degre"),
     f(x) ~ {
       mutate(clinic2, Group = !!sym(x)) %>%
-  mutate(across(everything(), ~ as.character(.))) %>%
       select(Group, groupe) %>%
       plot_bar_2cat(
         sort = c("HD", "DA", "PN"),
@@ -472,7 +464,9 @@ list.map(
     }
   ) %>%
   plot_grid(plotlist = ., align = "hv")
+```
 
+```{r, fig.width = 8, fig.height = 3.7}
 mutate(clinic2, `.terrain_atopique` = terrain_atopique) %>%
   select(.terrain_atopique, terrain_atopique_fam_1er_degre, da, terrain_atopique) %>%
   rename_with(
