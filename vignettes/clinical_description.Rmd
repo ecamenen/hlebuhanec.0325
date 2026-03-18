@@ -428,10 +428,9 @@ clinic2 <- mutate(clinic2, pbmc = pmbc)
 list.map(
     c("pbmc", "serum", "plasma", "biopsie", "numeration", "swab") %>%
       c("dsq", ., paste0(., "_post_ttt"), "dsquame_post_ttt"),
-    f(x) ~ {
-        mutate(clinic2, Group = !!sym(x)) %>%
+    f(x, y) ~ {
+        p <- mutate(clinic2, Group = !!sym(x)) %>%
             select(Group, groupe) %>%
-        
             filter(groupe != "HD") %>%
             plot_bar_2cat(
                 sort = c("DA", "PN"),
@@ -441,12 +440,19 @@ list.map(
                 stats = FALSE,
                 threshold_pct = 10,
                 threshold = 1,
-                width_title = 20,
+                digits = 0,
                 title = str_replace_all(x, "_", " ") %>% str_to_sentence() %>%str_replace_all("POST TTT", "post-traitement")
             )
+        if(!y %in% c(4, 11)) {
+          p + theme(legend.position = "none")
+        } else {
+          p
+        }
     }
-) %>%
-    plot_grid(plotlist = ., ncol = 7)
+) -> p
+plot_grid(plotlist = p[seq(7)], ncol = 4, rel_widths = c(rep(2, 3), 2.75))
+plot_grid(plotlist = p[-seq(7)], ncol = 4, rel_widths = c(rep(2, 3), 2.75))
+
 # TODO: heatmap
 ```
 
