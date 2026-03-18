@@ -506,7 +506,15 @@ format_auto <- function(x, digits = 2, sci_thresh = 1e4) {
   )
 }
 
-plot_missing0 <- function(df_sub, type = 1, colour  = rev(brewer.pal(9, "Reds")[-seq(2)]), label_x = "value", all = FALSE, threshold = Inf, ...) {
+plot_missing0 <- function(
+    df_sub,
+    type = 1,
+    colour  = rev(brewer.pal(9, "Reds")[-seq(2)]),
+    label_x = "value",
+    all = FALSE,
+    threshold = Inf,
+    ...
+  ) {
   func <- ifelse(type == 1, nrow, ncol)
   func2 <- ifelse(type == 1, ncol, nrow)
   var <- ifelse(type == 1, "Samples", "Variables")
@@ -547,11 +555,34 @@ plot_missing0 <- function(df_sub, type = 1, colour  = rev(brewer.pal(9, "Reds")[
   return(list(p = p, res = res))
 }
 #' @export
-plot_missing <- function(df_sub, colour  = rev(brewer.pal(9, "Reds")[-seq(2)]), label_x = "value", all = FALSE, threshold1 = Inf, threshold2 = Inf, ...) {
-
+plot_missing <- function(
+    df_sub,
+    colour  = rev(brewer.pal(9, "Reds")[-seq(2)]),
+    abel_x = "value",
+    all = FALSE,
+    threshold1 = Inf,
+    threshold2 = Inf,
+    ...
+  ) {
   p <- list()
-  p[[1]] <- plot_missing0(df_sub, type = 2, colour  = colour, label_x = label_x, all = all, threshold = threshold1, ...)
-  p[[2]] <- plot_missing0(df_sub, type = 1, colour  = colour, label_x = label_x, all = all, threshold = threshold2, ...)
+  p[[1]] <- plot_missing0(
+    df_sub,
+    type = 2,
+    colour  = colour,
+    label_x = label_x,
+    all = all,
+    threshold = threshold1,
+    ...
+  )
+  p[[2]] <- plot_missing0(
+    df_sub,
+    type = 1,
+    colour  = colour,
+    label_x = label_x,
+    all = all,
+    threshold = threshold2,
+    ...
+  )
 
   list.map(p, .$p) %>%
     plot_grid(plotlist = .) %>%
@@ -639,4 +670,50 @@ extract_rare <- function(df, threshold = 5) {
           ) %>%
           select(.x$Variables[[1]])
     )
+}
+
+#' @export
+print_group_numeric <- function(df, vars, format = identity) {
+  list.map(
+    vars,
+    f(x) ~ {
+      df %>%
+        group_by(groupe) %>%
+        reframe(
+          if (!all(is.na(.data[[x]]))) {
+            print_numeric(.data[[x]])
+          } else {
+            tibble()
+          }
+        ) %>%
+        mutate(Variable = x) %>%
+        relocate(Variable)
+    }
+  ) %>%
+    compact() %>%
+    list.rbind() %>%
+    select(-c("Variables", "Kurtosis", "Skewness", "Normality")) %>%
+    mutate(Variable = format(Variable))
+}
+
+#' @export
+write_statistics <- function(x, file = file.path(getwd(), "statistics.xlsx"), format = identity) {
+  l_var <- list()
+  l_var$categorical <- select(x, where(is.factor)) %>%
+    print_binomial() %>%
+    mutate(across(everything(), ~replace_na(.x, "NA")))
+
+  l_var$numerical <- select(x, where(is.numeric)) %>%
+    print_numeric()
+
+    wb <- createWorkbook()
+    list.map(
+      l_var,
+      f(x, y, z) ~ {
+        addWorksheet(wb, sheetName = z)
+        mutate(x, Variables = format(Variables)) %>%
+          writeData(wb, sheet = z, x = .)
+      }
+    )
+    saveWorkbook(wb, file, overwrite = TRUE)
 }

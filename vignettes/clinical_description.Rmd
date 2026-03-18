@@ -29,6 +29,7 @@ library("kableExtra")
 library("cowplot")
 library("janitor")
 library("naniar")
+library("openxlsx")
 data("clinic2")
 
 path_fig <- file.path(getwd(),  knitr::opts_chunk$get("fig.path"))
@@ -38,6 +39,16 @@ path_fig <- file.path(getwd(),  knitr::opts_chunk$get("fig.path"))
 table(clinic2$groupe) %>%
     enframe(name = "Group", value = "N") %>%
     kable0()
+
+func_format <- function(x) {
+  str_replace_all(x, "_", " ") %>%
+  str_to_sentence() %>%
+  str_replace_all("micro l", "\\(ml\\)") %>%
+  str_replace_all("mm3", "\\(mm3\\)")
+}
+
+select(clinic2, -ipp) %>%
+  write_statistics(file = file.path(fig.path, "statistics.xlsx"), format = function(x) func_format(x))
 ```
 
 ## Demography
@@ -86,24 +97,7 @@ list.map(
 ) %>%
   plot_grid(plotlist = ., ncol = 2)
 
-p <- list.map(
-  c("age", "age_au_dg_an"),
-    f(x, y) ~ {
-      if (y == 2)
-      res <- filter(clinic2, groupe != "HD") 
-      else
-        res <- clinic2
-      res %>%
-    group_by(groupe) %>%
-    summarise(print_numeric(!!sym(x))) %>% 
-    select(-c("Variables", "Kurtosis", "Skewness", "Normality")) %>%
-        mutate(Variable = x) %>%
-        relocate(Variable)
-    }
-  ) %>% 
-  compact() %>%
-  list.rbind()
-p
+(p <- print_group_numeric(clinic2, c("age", "age_au_dg_an")))
 
 kable0(p) %>%
   save_kable(file = file.path(path_fig, paste0("stats_age.png"), zoom = 2))
@@ -243,8 +237,18 @@ filter(res, abs(diff_age)  > 1.5) %>% select(date_naissance, age_years, age, dif
 
 ## Biologic
 ```{r, fig.width = 23, fig.height = 10}
+vars0 <- c("pne_mm3", "pnn", "monocytes", "cd4_micro_l", "cd8_micro_l", "ly_b_micro_l", "plaquettes", "creatinine")
+vars <- c(vars0, str_subset(colnames(clinic2), "ig_"))
+func_format <- function(x) {
+  str_replace_all(x, "_", " ") %>%
+  str_to_upper() %>%
+  str_replace_all("MICRO L", "\\(ml\\)") %>%
+  str_replace_all("MM3", "\\(mm3\\)") %>%
+  str_replace_all("IG", "Ig")
+}
+
 list.map(
-  c("pne_mm3", "pnn", "monocytes", "cd4_micro_l", "cd8_micro_l", "ly_b_micro_l", "plaquettes", "creatinine", str_subset(colnames(clinic2), "ig_")),
+  vars,
   f(x) ~ {
     res <- clinic2 %>%
       select(all_of(c(x, "groupe", "patient"))) %>%
@@ -264,11 +268,7 @@ list.map(
         pch_alpha = 0.25,
         coef = 1.5,
         label = TRUE,
-        title = str_replace_all(x, "_", " ") %>%
-          str_to_upper() %>%
-          str_replace_all("MICRO L", "\\(ml\\)") %>%
-          str_replace_all("MM3", "\\(mm3\\)") %>%
-          str_replace_all("IG", "Ig")
+        title = func_format(x)
       )
   }
 ) %>%
@@ -277,22 +277,7 @@ list.map(
 ```
 
 ```{r}
-vars <- c("pne_mm3", "pnn", "monocytes", "cd4_micro_l", "cd8_micro_l", "ly_b_micro_l", "plaquettes", "creatinine", str_subset(colnames(clinic2), "ig_"))
-p <- list.map(
-  vars,
-    f(x) ~ {
-    filter(clinic2, groupe != "HD") %>%
-      filter(!is.na(!!sym(x))) %>%
-      group_by(groupe) %>%
-      summarise(print_numeric(!!sym(x))) %>% 
-      select(-c("Variables", "Kurtosis", "Skewness", "Normality")) %>%
-        mutate(Variable = x) %>%
-        relocate(Variable)
-    }
-  ) %>% 
-  compact() %>%
-  list.rbind()
-p
+(p <- print_group_numeric(clinic2, vars, func_format))
 
 kable0(p) %>%
   save_kable(file = file.path(path_fig, "stats_biol.png"), zoom = 2)
