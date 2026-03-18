@@ -43,7 +43,7 @@ get_name_num <- function(x) {
 get_binomial <- function(x) {
   x %>%
     select(where(~ {
-      is.integer(.x) &&
+      (is.integer(.x) || is.factor(.x)) &&
         all(.x[!is.na(.x)] %in% c(0, 1))
     })) %>%
     names()
@@ -53,7 +53,7 @@ get_binomial <- function(x) {
 get_binomial2 <- function(x) {
   x %>%
     select(where(~ {
-      is.integer(.x) &&
+      (is.integer(.x) || is.factor(.x)) &&
         length(unique(.x[!is.na(.x)])) <= 2
     })) %>%
     names()
@@ -63,10 +63,14 @@ get_binomial2 <- function(x) {
 get_multinomial <- function(x, n_levels = 12, max_value = 20) {
   x %>%
     select(where(~ {
-      is.integer(.x) &&
+      res <- (is.integer(.x) || is.factor(.x)) &&
         length(unique(.x[!is.na(.x)])) > 2 &&
-        length(unique(.x[!is.na(.x)])) <= n_levels &&
-        max(.x[!is.na(.x)]) <= max_value
+        length(unique(.x[!is.na(.x)])) <= n_levels
+      if (!is.null(max_value) && is.integer(.x)) {
+        res && (max(.x[!is.na(.x)]) <= max_value)
+      } else {
+        res
+      }
     })) %>%
     names()
 }
