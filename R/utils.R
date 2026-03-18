@@ -506,53 +506,57 @@ format_auto <- function(x, digits = 2, sci_thresh = 1e4) {
   )
 }
 
-#' @export
-plot_outliers2 <- function(df_sub, colour  = rev(brewer.pal(9, "Reds")[-seq(2)]), label_x = "value", all = FALSE, threshold1 = Inf, threshold2 = Inf, ...) {
-  p <- list()
-
-  p[[1]] <- apply(df_sub, 2, function(x) (is.na(x)) %>% which() %>% length()) %>%
-    .[. != 0] %>%
-    .[. <= threshold1] %>%
-    plot_bar(
-      sample_size = nrow(df_sub),
-      colour = rev(brewer.pal(9, "Reds")[-seq(2)]),
-      label_x = label_x,
-      ...
-    ) +
-    ggtitle(NULL)
-
-  if (isTRUE(all)) {
-    p[[1]] <- p[[1]] +
-    geom_hline(
-      yintercept = nrow(df_sub)/2,
-      linetype = "dashed",
-      linewidth = 1
-    )
+plot_missing0 <- function(df_sub, type = 1, colour  = rev(brewer.pal(9, "Reds")[-seq(2)]), label_x = "value", all = FALSE, threshold = Inf, ...) {
+  func <- ifelse(type == 1, nrow, ncol)
+  func2 <- ifelse(type == 1, ncol, nrow)
+  var <- ifelse(type == 1, "Samples", "Variables")
+  res <- apply(df_sub, type, function(x) (is.na(x)) %>% which() %>% length())
+  if (threshold != Inf) {
+    res <- res %>%
+      .[. <= threshold]
+    if (length(res) == 0) {
+      tmp <- 0
+    } else {
+      tmp <- length(res) / func(df_sub)
+    }
+    print(paste0(var, " removed with the selected threshold: ", func(df_sub) - length(res), " (", round(100 - (tmp * 100), 2), "%)."))
   }
-
-  res <- apply(df_sub, 1, function(x) (is.na(x)) %>% which() %>% length()) %>%
-    .[. > 1] %>%
-    .[. <= threshold2]
-  p[[2]] <- res %>%
-    plot_bar(
-      sample_size = ncol(df_sub),
-      colour = colour[which(rownames(df_sub) %in% names(res))],
-      label_x = label_x,
-      ...
-    )+
+  res <- res %>% .[. != 0]
+  if (type == 1) {
+    colour <- colour[which(rownames(df_sub) %in% names(res))]
+  } else {
+    colour <- rev(brewer.pal(9, "Reds")[-seq(2)])
+  }
+  p <- plot_bar(
+    res,
+    sample_size = func2(df_sub),
+    colour = colour,
+    label_x = label_x,
+    ...
+  ) +
     ggtitle(NULL)
 
   if (isTRUE(all)) {
-    p[[2]] <- p[[2]] +
+    p <- p +
       geom_hline(
-        yintercept = nrow(df_sub)/2,
+        yintercept = func2(df_sub)/2,
         linetype = "dashed",
         linewidth = 1
       )
   }
+  return(list(p = p, res = res))
+}
+#' @export
+plot_missing <- function(df_sub, colour  = rev(brewer.pal(9, "Reds")[-seq(2)]), label_x = "value", all = FALSE, threshold1 = Inf, threshold2 = Inf, ...) {
 
-  plot_grid(plotlist = p) %>% plot()
-  return(sort(res, decreasing = TRUE))
+  p <- list()
+  p[[1]] <- plot_missing0(df_sub, type = 2, colour  = colour, label_x = label_x, all = all, threshold = threshold1, ...)
+  p[[2]] <- plot_missing0(df_sub, type = 1, colour  = colour, label_x = label_x, all = all, threshold = threshold2, ...)
+
+  list.map(p, .$p) %>%
+    plot_grid(plotlist = .) %>%
+    plot()
+  return(sort(p[[2]]$res, decreasing = TRUE))
 }
 
 #' @export
@@ -608,9 +612,6 @@ plot_outliers <- function(df, n_max = 15, ...) {
       pull(n, f)
     )
 }
-
-%>%
-  select(.x$Variables)
 
 #' @export
 extract_rare <- function(df, threshold = 5) {

@@ -526,23 +526,24 @@ df_sub <- clinic2 %>%
         to_title()
       )
 
-p <- plot_outliers2(
+p <- plot_missing(
   df_sub,
   cex = .1,
   all = TRUE,
   sort = "asc",
   width_text = 50,
-  factor(df_sub$Groupe, labels = palette_discrete()[seq(2)]),
+  label_x = "none",
+  factor(df_sub$Groupe, labels = palette_discrete()[seq(2)])
 )
-plot_outliers2(
+plot_missing(
     df_sub,
     cex = .8,
     n_max = 35,
     width_text = 50,
     label_y = "percent",
-    factor(df_sub$Groupe, labels = palette_discrete()[seq(2)]),
-    threshold1 = 61,
-    threshold2 = 42
+    threshold1 = nrow(df_sub)/2,
+    threshold2 = ncol(df_sub)/2,
+    colour = factor(df_sub$Groupe, labels = palette_discrete()[seq(2)])
 )
 p2 <- plot_outliers(df_sub, cex = 8, n_max = 20)
 
