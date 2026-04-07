@@ -283,6 +283,18 @@ kable0(p) %>%
   save_kable(file = file.path(path_fig, "stats_biol.png"), zoom = 2)
 ```
 
+```{r}
+clinic2 %>%
+    column_to_rownames("patient") %>%
+    select(vars0, groupe) %>%
+    filter(groupe != "HD") %>%
+    group_by(groupe) %>%
+    summarise(across(everything(), ~ median(.x, na.rm = TRUE))) %>%
+    column_to_rownames("groupe") %>%
+  rename_with(~ .x %>% func_format()) %>%
+  plot_radar()
+```
+
 ## Scores
 ```{r}
 func_format <- function(x) {
@@ -306,10 +318,13 @@ list.map(
         coef = 1.5,
         label = TRUE,
         title = func_format(x)
-      )
+      ) +
+      ylim(0, NA)
   }
 ) %>%
     plot_grid(plotlist = ., ncol = 3)
+# [0-30]; [0-10]
+# severe: >10; > 6
 
 list.map(
   str_subset(colnames(clinic2), "easi_"),
@@ -327,10 +342,13 @@ list.map(
         coef = 1.5,
         label = TRUE,
         title = func_format(x)
-      )
+      ) +
+      ylim(0, NA)
   }
 ) %>%
     plot_grid(plotlist = .)
+# [0-72]
+# severe: >21
 
 list.map(
     str_subset(colnames(clinic2), "iga_"),
@@ -377,6 +395,8 @@ clinic2 %>%
       str_to_sentence() %>% 
       str_replace_all("percent", "\\(%\\)")
 )
+# severe: > 30
+
 ```
 
 ```{r}
