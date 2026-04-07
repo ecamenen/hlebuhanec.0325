@@ -760,8 +760,8 @@ plot_radar_clinic <- function(x, vars, func = func_format, ...) {
 }
 
 #' @export
-table_groupe_numeric <- function(x, vars, file = NULL) {
-  (p <- print_group_numeric(x, vars))
+table_groupe_numeric <- function(x, vars, format = identity, file = NULL) {
+  (p <- print_group_numeric(x, vars, format))
 
   if (!is.null(file))
     kable0(p) %>% save_kable(file = file, zoom = 2)

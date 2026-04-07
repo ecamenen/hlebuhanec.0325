@@ -121,7 +121,7 @@ list.map(
     pull(clinic2, x) %>%
       plot_date(
         func = ymd,
-        title = str_replace_all(x, "_", " ") %>% str_to_sentence(),
+        title = func_format(x),
         regex = regex
       )
   }
@@ -167,8 +167,7 @@ clinic2 %>%
         sort = c("HD", "DA", "PN"),
         stats = FALSE,
         threshold_pct = 10,
-        title = str_replace_all(x, "_", " ") %>%
-          str_to_sentence()
+        title = func_format(x)
     ) -> res
   }
 ) %>% plot_grid(plotlist = ., ncol = 2)
@@ -210,7 +209,7 @@ p <- list.map(
       coef = 1.5,
       label = TRUE,
       width_text = 20,
-      title = str_replace_all(x, "_", " ") %>% str_to_sentence(),
+      title = func_format(x),
       func_label = label_date,
       ratio_labs = 1
     ) -> res
@@ -236,7 +235,7 @@ filter(res, abs(diff_age)  > 1.5) %>% select(date_naissance, age_years, age, dif
 ```{r, fig.width = 23, fig.height = 10}
 vars0 <- c("pne_mm3", "pnn", "monocytes", "cd4_micro_l", "cd8_micro_l", "ly_b_micro_l", "plaquettes", "creatinine")
 vars <- c(vars0, str_subset(colnames(clinic2), "ig_"))
-func_format <- function(x) {
+func_format2 <- function(x) {
   str_replace_all(x, "_", " ") %>%
   str_to_upper() %>%
   str_replace_all("MICRO L", "\\(ml\\)") %>%
@@ -265,7 +264,7 @@ list.map(
         pch_alpha = 0.25,
         coef = 1.5,
         label = TRUE,
-        title = func_format(x)
+        title = func_format2(x)
       )
   }
 ) %>%
@@ -274,19 +273,19 @@ list.map(
 ```
 
 ```{r}
-table_groupe_numeric(clinic2, vars, file.path(path_fig, paste0("stats_biol.png")))
+table_groupe_numeric(clinic2, vars, file.path(path_fig, paste0("stats_biol.png")), format = func_format2)
 ```
 
 ```{r}
 filter(clinic2, groupe != "HD") %>%
-  plot_radar_clinic(vars0)
+  plot_radar_clinic(vars0, func = func_format2)
 ```
 
 ```{r, fig.width = 20, fig.height = 10}
 filter(clinic2, groupe != "HD") %>%
-    plot_heatmap_clinic(vars0)
+    plot_heatmap_clinic(vars0, func = func_format2)
 filter(clinic2, groupe != "HD") %>%
-    plot_heatmap_clinic(vars0, normalize = "minmax")
+    plot_heatmap_clinic(vars0, normalize = "minmax", func = func_format2)
 ```
 
 ## Scores
@@ -385,8 +384,7 @@ clinic2 %>%
     threshold_pct = 15,
     threshold = 1,
     width_title = 20,
-    title = str_replace_all(x, "_", " ") %>% 
-      str_to_sentence() %>% 
+    title = func_format(x) %>% 
       str_replace_all("percent", "\\(%\\)")
 )
 # severe: > 30
@@ -411,8 +409,7 @@ list.map(
         digits = 1,
         hsize = 1.5,
         legend = rev(name_levels),
-        title = str_replace_all(x, "_", " ") %>%
-          str_to_sentence() %>%
+        title = func_format(x) %>%
           str_replace_all("pn", "PN")
     )
     }
