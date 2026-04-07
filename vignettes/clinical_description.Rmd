@@ -282,7 +282,7 @@ filter(clinic2, groupe != "HD") %>%
   plot_radar_clinic(vars0)
 ```
 
-```{r}
+```{r, fig.width = 20, fig.height = 10}
 filter(clinic2, groupe != "HD") %>%
     plot_heatmap_clinic(vars0)
 filter(clinic2, groupe != "HD") %>%
@@ -390,7 +390,9 @@ clinic2 %>%
       str_replace_all("percent", "\\(%\\)")
 )
 # severe: > 30
+```
 
+```{r, fig.width = 20, fig.height = 10}
 filter(clinic2, groupe != "HD") %>%
     plot_heatmap_clinic(c("dlqi", "eva_prurit", "easi_da"))
 ```
@@ -454,7 +456,9 @@ list.map(
 ) -> p
 plot_grid(plotlist = p[seq(7)], ncol = 4, rel_widths = c(rep(2, 3), 2.75))
 plot_grid(plotlist = p[-seq(7)], ncol = 4, rel_widths = c(rep(2, 3), 2.75))
+```
 
+```{r, fig.width = 20, fig.height = 10}
 plot_heatmap_clinic(clinic2, vars[seq(7)])
 ```
 
@@ -497,7 +501,9 @@ list.map(
     }
   ) %>%
   plot_grid(plotlist = ., align = "hv")
+```
 
+```{r, fig.width = 20, fig.height = 10}
 plot_heatmap_clinic(clinic2, vars)
 ```
 

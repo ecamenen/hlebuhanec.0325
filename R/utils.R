@@ -719,7 +719,7 @@ write_statistics <- function(x, file = file.path(getwd(), "statistics.xlsx"), fo
 }
 
 #' @export
-plot_heatmap_clinic <- function(x, vars, func = func_format, ...) {
+plot_heatmap_clinic <- function(x, vars, func = func_format, normalize = TRUE, ...) {
   yintercept <- x %>%
     count(groupe) %>%
     deframe() %>%
@@ -729,7 +729,7 @@ plot_heatmap_clinic <- function(x, vars, func = func_format, ...) {
   column_to_rownames(x, "patient") %>%
     select(all_of(vars)) %>%
     rename_with(func) %>%
-    plot_heatmap(sort = FALSE, normalize = TRUE, ...) +
+    plot_heatmap(sort = FALSE, normalize = normalize, ...) +
     geom_vline(
       xintercept = yintercept + .5,
       linewidth = 1,
