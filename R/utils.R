@@ -786,3 +786,40 @@ plot_bar_2cat_clinic <- function(x, vars, sort = c("HD", "DA", "PN"), pct = FALS
     }
   )
 }
+
+#' @export
+mplot_bar_2cat_clinic <- function(x, vars, ...) {
+  p <- plot_bar_2cat_clinic(x, vars, ...)
+  plot_grid(plotlist = p[seq(8)], ncol = 4, nrow = 2, align = "hv") %>% print()
+  plot_grid(plotlist = p[-seq(8)], ncol = 4, nrow = 2, align = "hv")
+}
+
+#' @export
+plot_violin_group <- function(x, vars, func = func_format, ...) {
+  list.map(
+    vars,
+    f(i) ~ {
+      res <- select(x, all_of(c(i, "groupe", "patient")))
+      all_na <- res %>%
+        group_by(groupe) %>%
+        summarise(all_na = all(is.na(!!sym(i)))) %>%
+        pull(all_na) %>%
+        any()
+      if(!all_na)
+        pivot_wider(res, names_from = groupe, values_from = !!sym(i)) %>%
+        column_to_rownames("patient") %>%
+        plot_violin(
+          colour = palette_discrete()[seq(length(unique(res$groupe)))],
+          cex = 1.2,
+          pch_size = 3,
+          pch_alpha = 0.25,
+          coef = 1.5,
+          label = TRUE,
+          title = func(i),
+          ...
+        ) +
+        ylim(0, NA)
+    }
+  ) %>%
+    compact()
+}
