@@ -97,10 +97,7 @@ list.map(
 ) %>%
   plot_grid(plotlist = ., ncol = 2)
 
-(p <- print_group_numeric(clinic2, c("age", "age_au_dg_an")))
-
-kable0(p) %>%
-  save_kable(file = file.path(path_fig, paste0("stats_age.png")), zoom = 2)
+table_groupe_numeric(clinic2, c("age", "age_au_dg_an"), file.path(path_fig, paste0("stats_age.png")))
 
 filter(clinic2, is.na(age)) %>% 
   select(patient)
@@ -277,31 +274,19 @@ list.map(
 ```
 
 ```{r}
-(p <- print_group_numeric(clinic2, vars, func_format))
-
-kable0(p) %>%
-  save_kable(file = file.path(path_fig, "stats_biol.png"), zoom = 2)
-```
-
-```{r}
-clinic2 %>%
-    column_to_rownames("patient") %>%
-    select(vars0, groupe) %>%
-    filter(groupe != "HD") %>%
-    group_by(groupe) %>%
-    summarise(across(everything(), ~ median(.x, na.rm = TRUE))) %>%
-    column_to_rownames("groupe") %>%
-  rename_with(~ .x %>% func_format()) %>%
-  plot_radar()
+table_groupe_numeric(clinic2, vars, file.path(path_fig, paste0("stats_biol.png")))
 ```
 
 ```{r}
 filter(clinic2, groupe != "HD") %>%
-    plot_heatmap_clinic(vars0, normalize = TRUE, sort = FALSE) +
-    guides(fill = guide_colorbar(title = "Z-score"))
+  plot_radar_clinic(vars0)
+```
+
+```{r}
 filter(clinic2, groupe != "HD") %>%
-    plot_heatmap_clinic(vars0, normalize = "minmax", sort = FALSE) +
-    guides(fill = guide_colorbar(title = "Min-max"))
+    plot_heatmap_clinic(vars0)
+filter(clinic2, groupe != "HD") %>%
+    plot_heatmap_clinic(vars0, normalize = "minmax")
 ```
 
 ## Scores
@@ -407,8 +392,7 @@ clinic2 %>%
 # severe: > 30
 
 filter(clinic2, groupe != "HD") %>%
-    plot_heatmap_clinic(c("dlqi", "eva_prurit", "easi_da"), normalize = TRUE, sort = FALSE) +
-    guides(fill = guide_colorbar(title = "Z-score"))
+    plot_heatmap_clinic(c("dlqi", "eva_prurit", "easi_da"))
 ```
 
 ```{r}
