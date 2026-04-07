@@ -361,6 +361,77 @@ list.map(
 menopause
 ```
 
+## Comorbidities
+```{r}
+vars <- c(
+  "comorbidites",
+  "hta",
+  "diabete",
+  "immunodepression",
+  "autres_comorbidites",
+  "ttt_chroniques",
+  "menopause",
+  "atb_1mois",
+  "derniere_douche_12h",
+  "dernier_emollient_12h"
+)
+mplot_bar_2cat_clinic(clinic2, vars)
+```
+
+```{r, fig.width = 20, fig.height = 10}
+plot_heatmap_clinic(clinic2, vars)
+```
+
+```{r}
+clinic2$temps_dp_dernier_emollient_heures <- clinic2$temps_dp_dernier_emollient_heures %>% str_remove_all("> ?") %>% as.numeric()
+
+vars <- c(
+  #"temps_dp_derniere_at_bttt_sem",
+  "temps_dp_derniere_douche_heures",
+  "temps_dp_dernier_emollient_heures"
+)
+
+plot_violin_group(clinic2, vars) %>%
+  plot_grid(plotlist = .)
+```
+
+```{r, fig.width = 20, fig.height = 10}
+plot_heatmap_clinic(clinic2, vars)
+```
+
+## Traitements
+```{r}
+vars <- c(
+  "ttt_topiques",
+  "dctc",
+  "tacrolimus_topique",
+  "autres_ttt_topiques",
+  "ttt_systemique_1_mois",
+  # "preciser_ttt_syst_1_mois",  # N = 1
+  "photottt",
+  "immunosuppresseurs",
+  "ctc_systemique",
+  "methotrexate",
+  "autres_is",
+  "preciser_immunosuppresseurs",
+  "biottt",
+  "dupilumab",
+  "autre_biottt",
+  "preciser_biottt",
+  "autres_ttt"
+  # "preciser_autre_ttt"
+)
+
+clinic2$preciser_biottt <- clinic2$preciser_biottt %>% str_remove_all(" durant.*") 
+clinic3 <- select(clinic2, c(all_of(vars), "groupe")) %>%
+    rename_with(~ str_replace_all(.x, "_is", "_immunosuppresseurs") %>% str_replace_all("((bio)|(photo))ttt", "\\1therapie") %>% str_replace_all("ttt", "traitements") %>% str_replace_all("^d", "dermo") %>% str_replace_all("ctc", "corticoides topiques"))
+
+clinic3 %>% mplot_bar_2cat_clinic(colnames(.) %>% head(length(vars)))   
+
+#   "derniere_application_dctc",
+# clinic2$temps_dp_dernier_emollient_heures <- clinic2$temps_dp_dernier_emollient_heures %>% str_remove_all("> ?") %>% as.numeric()
+```
+
 ## Samples
 ```{r}
 vars <- c("pbmc", "serum", "plasma", "biopsie", "numeration", "swab") %>%
