@@ -729,7 +729,40 @@ plot_heatmap_clinic <- function(x, vars, func = func_format, ...) {
   column_to_rownames(x, "patient") %>%
     select(all_of(vars)) %>%
     rename_with(func) %>%
-    plot_heatmap(...) +
-    geom_vline(xintercept = yintercept + .5, linewidth = 1, linetype = "dashed") +
-    theme(axis.text.x = element_text(size = 10, color = "gray50", angle = 45, vjust = 1, hjust = 1), axis.ticks = element_line(colour = "gray50"))
+    plot_heatmap(sort = FALSE, normalize = TRUE, ...) +
+    geom_vline(
+      xintercept = yintercept + .5,
+      linewidth = 1,
+      linetype = "dashed"
+    ) +
+    theme(
+      axis.text.x = element_text(
+        size = 10,
+        color = "gray50",
+        angle = 45,
+        vjust = 1,
+        hjust = 1
+      ),
+      axis.ticks = element_line(colour = "gray50")
+    )
+}
+
+#' @export
+plot_radar_clinic <- function(x, vars, func = func_format, ...) {
+  x %>%
+    column_to_rownames("patient") %>%
+    select(c(all_of(vars), "groupe")) %>%
+    group_by(groupe) %>%
+    summarise(across(everything(), ~ median(.x, na.rm = TRUE))) %>%
+    column_to_rownames("groupe") %>%
+    rename_with(~ .x %>% func()) %>%
+    plot_radar()
+}
+
+#' @export
+table_groupe_numeric <- function(x, vars, file = NULL) {
+  (p <- print_group_numeric(x, vars))
+
+  if (!is.null(file))
+    kable0(p) %>% save_kable(file = file, zoom = 2)
 }
