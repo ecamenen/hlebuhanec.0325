@@ -558,7 +558,7 @@ plot_missing0 <- function(
 plot_missing <- function(
     df_sub,
     colour  = rev(brewer.pal(9, "Reds")[-seq(2)]),
-    abel_x = "value",
+    label_x = "value",
     all = FALSE,
     threshold1 = Inf,
     threshold2 = Inf,
@@ -716,4 +716,20 @@ write_statistics <- function(x, file = file.path(getwd(), "statistics.xlsx"), fo
       }
     )
     saveWorkbook(wb, file, overwrite = TRUE)
+}
+
+#' @export
+plot_heatmap_clinic <- function(x, vars, func = func_format, ...) {
+  yintercept <- x %>%
+    count(groupe) %>%
+    deframe() %>%
+    cumsum() %>%
+    head(2)
+
+  column_to_rownames(x, "patient") %>%
+    select(all_of(vars)) %>%
+    rename_with(func) %>%
+    plot_heatmap(...) +
+    geom_vline(xintercept = yintercept + .5, linewidth = 1, linetype = "dashed") +
+    theme(axis.text.x = element_text(size = 10, color = "gray50", angle = 45, vjust = 1, hjust = 1), axis.ticks = element_line(colour = "gray50"))
 }

@@ -48,7 +48,7 @@ func_format <- function(x) {
 }
 
 select(clinic2, -ipp) %>%
-  write_statistics(file = file.path(fig.path, "statistics.xlsx"), format = function(x) func_format(x))
+  write_statistics(file = file.path(path_fig, "statistics.xlsx"), format = function(x) func_format(x))
 ```
 
 ## Demography
@@ -100,7 +100,7 @@ list.map(
 (p <- print_group_numeric(clinic2, c("age", "age_au_dg_an")))
 
 kable0(p) %>%
-  save_kable(file = file.path(path_fig, paste0("stats_age.png"), zoom = 2))
+  save_kable(file = file.path(path_fig, paste0("stats_age.png")), zoom = 2)
 
 filter(clinic2, is.na(age)) %>% 
   select(patient)
@@ -295,6 +295,15 @@ clinic2 %>%
   plot_radar()
 ```
 
+```{r}
+filter(clinic2, groupe != "HD") %>%
+    plot_heatmap_clinic(vars0, normalize = TRUE, sort = FALSE) +
+    guides(fill = guide_colorbar(title = "Z-score"))
+filter(clinic2, groupe != "HD") %>%
+    plot_heatmap_clinic(vars0, normalize = "minmax", sort = FALSE) +
+    guides(fill = guide_colorbar(title = "Min-max"))
+```
+
 ## Scores
 ```{r}
 func_format <- function(x) {
@@ -397,6 +406,9 @@ clinic2 %>%
 )
 # severe: > 30
 
+filter(clinic2, groupe != "HD") %>%
+    plot_heatmap_clinic(c("dlqi", "eva_prurit", "easi_da"), normalize = TRUE, sort = FALSE) +
+    guides(fill = guide_colorbar(title = "Z-score"))
 ```
 
 ```{r}
@@ -427,11 +439,13 @@ list.map(
 menopause
 ```
 
+## Samples
 ```{r}
+vars <- c("pbmc", "serum", "plasma", "biopsie", "numeration", "swab") %>%
+      c("dsq", ., paste0(., "_post_ttt"), "dsquame_post_ttt")
 clinic2 <- mutate(clinic2, pbmc = pmbc)
 list.map(
-    c("pbmc", "serum", "plasma", "biopsie", "numeration", "swab") %>%
-      c("dsq", ., paste0(., "_post_ttt"), "dsquame_post_ttt"),
+    vars,
     f(x, y) ~ {
         p <- mutate(clinic2, Group = !!sym(x)) %>%
             select(Group, groupe) %>%
@@ -457,7 +471,7 @@ list.map(
 plot_grid(plotlist = p[seq(7)], ncol = 4, rel_widths = c(rep(2, 3), 2.75))
 plot_grid(plotlist = p[-seq(7)], ncol = 4, rel_widths = c(rep(2, 3), 2.75))
 
-# TODO: heatmap
+plot_heatmap_clinic(clinic2, vars[seq(7)])
 ```
 
 ```{r, fig.width = 8, fig.height = 3.7}
@@ -483,8 +497,9 @@ list.map(
 
 ## Atopie
 ```{r}
+vars <- c("terrain_atopique", "asthme", "da", "rhinite_allergique", "conjonctivite_allergique", "terrain_atopique_fam_1er_degre")
 list.map(
-    c("terrain_atopique", "asthme", "da", "rhinite_allergique", "conjonctivite_allergique", "terrain_atopique_fam_1er_degre"),
+    vars,
     f(x) ~ {
       mutate(clinic2, Group = !!sym(x)) %>%
       select(Group, groupe) %>%
@@ -498,19 +513,16 @@ list.map(
     }
   ) %>%
   plot_grid(plotlist = ., align = "hv")
+
+plot_heatmap_clinic(clinic2, vars)
 ```
 
 ```{r, fig.width = 8, fig.height = 3.7}
+vars <- c("terrain_atopique_fam_1er_degre", "da", "terrain_atopique")
 mutate(clinic2, `.terrain_atopique` = terrain_atopique) %>%
-  select(.terrain_atopique, terrain_atopique_fam_1er_degre, da, terrain_atopique) %>%
-  rename_with(
-    ~ .x %>%
-      str_replace_all("_", " ") %>%
-      str_to_sentence()
-  ) %>%
+  select(c(".terrain_atopique", all_of(vars))) %>%
+  rename_with(func_format) %>%
   plot_alluvial()
-
-# TODO: heatmap
 ```
 
 ## Missing variables
