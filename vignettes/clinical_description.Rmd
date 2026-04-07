@@ -465,38 +465,14 @@ select(clinic2, ethnie, phototype) %>%
 ```
 
 ```{r}
-list.map(
-    c("ethnie", "da_pn"),
-    f(x) ~ {
-      mutate(clinic2, Group = !!sym(x)) %>%
-      select(Group, groupe) %>%
-      plot_bar_2cat(
-        sort = c("HD", "DA", "PN"),
-        stats = FALSE,
-        title = str_replace_all(x, "_", " ") %>% str_to_sentence()
-      )
-    }
-  ) %>%
+plot_bar_2cat_clinic(clinic2, c("ethnie", "da_pn"), pct = TRUE) %>%
   plot_grid(plotlist = ., align = "hv")
 ```
 
 ## Atopie
 ```{r}
 vars <- c("terrain_atopique", "asthme", "da", "rhinite_allergique", "conjonctivite_allergique", "terrain_atopique_fam_1er_degre")
-list.map(
-    vars,
-    f(x) ~ {
-      mutate(clinic2, Group = !!sym(x)) %>%
-      select(Group, groupe) %>%
-      plot_bar_2cat(
-        sort = c("HD", "DA", "PN"),
-        stats = FALSE,
-        width_title = 20,
-        pct = FALSE,
-        title = str_replace_all(x, "_", " ") %>% str_to_sentence()
-      )
-    }
-  ) %>%
+plot_bar_2cat_clinic(clinic2, vars, pct = TRUE) %>%
   plot_grid(plotlist = ., align = "hv")
 ```
 

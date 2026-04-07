@@ -766,3 +766,23 @@ table_groupe_numeric <- function(x, vars, format = identity, file = NULL) {
   if (!is.null(file))
     kable0(p) %>% save_kable(file = file, zoom = 2)
 }
+
+#' @export
+plot_bar_2cat_clinic <- function(x, vars, sort = c("HD", "DA", "PN"), pct = FALSE, threshold = 1, func = func_format, ...) {
+  list.map(
+    vars,
+    f(i) ~ {
+      mutate(x, Group = !!sym(i)) %>%
+        select(Group, groupe) %>%
+        plot_bar_2cat(
+          sort = sort,
+          stats = FALSE,
+          width_title = 20,
+          pct = pct,
+          title = func(i),
+          threshold = threshold,
+          ...
+        )
+    }
+  )
+}
