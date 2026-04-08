@@ -244,7 +244,7 @@ func_format2 <- function(x) {
 }
 
 filter(clinic2, groupe != "HD") %>%
-plot_violin_group(vars, func_format2) %>%
+plot_violin_group(vars, func_format2, method = "wilcox") %>%
   plot_grid(plotlist = ., ncol = 4)
 ```
 
@@ -254,6 +254,7 @@ table_groupe_numeric(clinic2, vars, file.path(path_fig, paste0("stats_biol.png")
 
 ```{r}
 filter(clinic2, groupe != "HD") %>%
+  mutate(across(vars0, ~ (. - min(., na.rm = TRUE)) / (max(., na.rm = TRUE) - min(., na.rm = TRUE)) * 100)) %>%
   plot_radar_clinic(vars0, func = func_format2)
 ```
 
@@ -262,6 +263,46 @@ filter(clinic2, groupe != "HD") %>%
     plot_heatmap_clinic(vars0, func = func_format2)
 filter(clinic2, groupe != "HD") %>%
     plot_heatmap_clinic(vars0, normalize = "minmax", func = func_format2)
+```
+
+```{r}
+select(clinic2, vars0) %>% 
+    rename_all(func_format) %>%
+    plot_mcor()
+```
+
+```{r}
+select(clinic2, vars0) %>% 
+    rename_all(func_format) %>%
+    plot_cor_network(cutoff = .4, dyn = FALSE, label = TRUE)
+```
+
+```{r}
+mat_cor <- select(clinic2, vars0) %>%
+    correlate(cutoff = .1) %>%
+    pluck(1)
+mat_cor[upper.tri(mat_cor)] <- NA
+
+res <- as.data.frame(as.table(mat_cor)) %>%
+    filter(Freq > 0.5) %>%
+    select(-Freq) %>% 
+    mutate(across(everything(), as.character))
+
+list.map(
+  seq_along(res),
+  f(x) ~
+  slice(res, x) %>% 
+    as.character() %>% 
+    select(clinic2, .) %>%
+    rename_all(func_format) %>%
+    plot_cor() +
+    scale_x_log10() +
+    scale_y_log10()
+) %>% plot_grid(plotlist = .)
+```
+
+```{r}
+metada_samples(clinic2, c("DA35", "DA04", "PN02", "PN03", "PN09"))
 ```
 
 ## Scores
@@ -424,9 +465,10 @@ vars <- c(
 
 clinic2$preciser_biottt <- clinic2$preciser_biottt %>% str_remove_all(" durant.*") 
 clinic3 <- select(clinic2, c(all_of(vars), "groupe")) %>%
-    rename_with(~ str_replace_all(.x, "_is", "_immunosuppresseurs") %>% str_replace_all("((bio)|(photo))ttt", "\\1therapie") %>% str_replace_all("ttt", "traitements") %>% str_replace_all("^d", "dermo") %>% str_replace_all("ctc", "corticoides topiques"))
+    rename_with(~ str_replace_all(.x, "_is", "_immunosuppresseurs") %>% str_replace_all("((bio)|(photo))ttt", "\\1therapie") %>% str_replace_all("ttt", "traitements") %>% str_replace_all("ctc", "corticoides topiques") %>% str_replace_all("d(corticoides)", "dermo\\1"))
 
-clinic3 %>% mplot_bar_2cat_clinic(colnames(.) %>% head(length(vars)))   
+filter(clinic3, groupe != "HD") %>%
+  mplot_bar_2cat_clinic(colnames(.) %>% head(length(vars)), sort = c("DA", "PN"))   
 
 #   "derniere_application_dctc",
 # clinic2$temps_dp_dernier_emollient_heures <- clinic2$temps_dp_dernier_emollient_heures %>% str_remove_all("> ?") %>% as.numeric()
@@ -540,8 +582,7 @@ list.map(
   list(p, p2),
   f(x) ~
     filter(clinic2, patient %in% names(head(x))) %>%
-  select(patient, sexe, age, ethnie) %>% 
-  kable0()
+      metada_samples(ids = pull(., "patient"))
 )
 
 res <- extract_rare(df_sub) %>% 

@@ -756,15 +756,15 @@ plot_radar_clinic <- function(x, vars, func = func_format, ...) {
     summarise(across(everything(), ~ median(.x, na.rm = TRUE))) %>%
     column_to_rownames("groupe") %>%
     rename_with(~ .x %>% func()) %>%
-    plot_radar()
+    plot_radar(...)
 }
 
 #' @export
-table_groupe_numeric <- function(x, vars, format = identity, file = NULL) {
+table_groupe_numeric <- function(x, vars, format = identity, file = NULL, ...) {
   (p <- print_group_numeric(x, vars, format))
 
   if (!is.null(file))
-    kable0(p) %>% save_kable(file = file, zoom = 2)
+    kable0(p, ...) %>% save_kable(file = file, zoom = 2)
 }
 
 #' @export
@@ -822,4 +822,12 @@ plot_violin_group <- function(x, vars, func = func_format, ...) {
     }
   ) %>%
     compact()
+}
+
+#' @export
+metada_samples <- function(x, ids, ...) {
+  filter(x, patient %in% ids) %>%
+    select(patient, sexe, age, ethnie) %>%
+    rename_all(str_to_sentence) %>%
+    kable0(...)
 }
