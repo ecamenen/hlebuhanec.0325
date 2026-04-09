@@ -768,7 +768,7 @@ table_groupe_numeric <- function(x, vars, format = identity, file = NULL, ...) {
 }
 
 #' @export
-plot_bar_2cat_clinic <- function(x, vars, sort = c("HD", "DA", "PN"), pct = FALSE, threshold = 1, func = func_format, ...) {
+plot_bar_2cat_clinic <- function(x, vars, sort = c("HD", "DA", "PN"), pct = FALSE, threshold = 1, func = func_format, width_title = 20, ...) {
   list.map(
     vars,
     f(i) ~ {
@@ -777,7 +777,7 @@ plot_bar_2cat_clinic <- function(x, vars, sort = c("HD", "DA", "PN"), pct = FALS
         plot_bar_2cat(
           sort = sort,
           stats = FALSE,
-          width_title = 20,
+          width_title = width_title,
           pct = pct,
           title = func(i),
           threshold = threshold,
