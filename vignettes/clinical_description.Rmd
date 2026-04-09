@@ -235,6 +235,8 @@ filter(res, abs(diff_age)  > 1.5) %>% select(date_naissance, age_years, age, dif
 ```{r, fig.width = 23, fig.height = 10}
 vars0 <- c("pne_mm3", "pnn", "monocytes", "cd4_micro_l", "cd8_micro_l", "ly_b_micro_l", "plaquettes", "creatinine")
 vars <- c(vars0, str_subset(colnames(clinic2), "ig_"))
+vars1 <- c(vars, "cd_ratio")
+vars2 <- c(vars0, "cd_ratio")
 func_format2 <- function(x) {
   str_replace_all(x, "_", " ") %>%
   str_to_upper() %>%
@@ -415,18 +417,66 @@ vars <- c(
   "hta",
   "diabete",
   "immunodepression",
-  "autres_comorbidites",
-  "ttt_chroniques",
+  "autres_comorbidites"
+)
+vars <- c(
   "menopause",
+  "ttt_chroniques",
   "atb_1mois",
   "derniere_douche_12h",
   "dernier_emollient_12h"
 )
-mplot_bar_2cat_clinic(clinic2, vars)
+vars1 <- vars[seq(3)]
+clinic3 <- select(clinic2, vars, "patient", "groupe") %>%
+    rename_with(~str_replace(., "hta", "hypertension") %>% str_replace(., "1", "<1") %>% str_replace("atb", "antibiotique") %>% str_replace("ttt", "traitements"), everything())
+
+select(clinic3, vars1, "groupe") %>%
+  plot_bar_2cat_clinic(colnames(.) %>% discard(~str_detect(., "groupe"))) %>% 
+    map(~ .x + labs(y = NULL)) %>%
+{
+  c(map(head(., -1), ~ .x + theme(legend.position = "none")), tail(., 1))
+} %>%
+    plot_grid(plotlist = ., nrow = 1, rel_widths = c(rep(1, length(vars1) -1), 1.3), align = "h")
+```
+
+```{r}
+(res <- clinic3 %>%
+   id_per_levels(colnames(.) %>% head(length(vars)), n_min = 5))
+
+res2 <- filter(res, groupe == "DA") %>%
+  filter((variable %in% c("menopause", "traitements_chroniques", "antibiotique_<1mois")  & levels == "Yes") | (variable %in% c("derniere_douche_<12h", "dernier_emollient_<12h") & levels == "No")) %>%
+  # filter(levels == "Yes") %>%
+    select(variable, liste_patients) %>%
+    mutate(liste_patients = str_split(liste_patients, ",\\s*")) %>%
+  mutate(variable = func_format(variable)) %>%
+    deframe() %>%
+    as.list()
+plot_venn_clinic(res2, n_max = 5, width_label = 15)
+```
+
+```{r}
+custom_upset_barplot(res2, ratio = 1)
+extract_combination(res2)
+```
+
+
+```{r}
+mutate(clinic3, `.diabete` = diabete) %>%
+  select(c(".diabete", all_of(vars))) %>%
+  rename_with(func_format) %>%
+  plot_alluvial()
 ```
 
 ```{r, fig.width = 20, fig.height = 10}
-plot_heatmap_clinic(clinic2, vars)
+clinic3 %>%
+    plot_heatmap_clinic(colnames(.) %>% head(length(vars)), width_text = 50)
+```
+
+```{r}
+# ids <- c("DA03", "DA04", "DA44", "DA31", "HD07")
+ids <- c("PN02", "PN03", "PN07", "PN11", "PN13", "PN19", "PN30", "PN37")
+
+metada_samples(clinic2, ids)
 ```
 
 ```{r}
@@ -438,12 +488,20 @@ vars <- c(
   "temps_dp_dernier_emollient_heures"
 )
 
-plot_violin_group(clinic2, vars) %>%
-  plot_grid(plotlist = .)
+select(clinic2, vars, groupe, patient) %>%
+    rename_with(~str_replace_all(., "dp_", "depuis_") %>% str_replace_all("heures", "(h)")) %>%
+  plot_violin_group(., colnames(.) %>% head(2)) %>%
+  map(~ .x + geom_hline(yintercept = 12, linetype = 2, linewidth = 1)) %>%
+    plot_grid(plotlist = .)
 ```
 
 ```{r, fig.width = 20, fig.height = 10}
 plot_heatmap_clinic(clinic2, vars)
+```
+
+```{r}
+var <- "derniere_douche"
+clinic2 %>% mutate(calculated = ifelse(!!sym(paste0("temps_dp_", var , "_heures")) < 12, "No", "Yes")) %>% select(all_of(c(paste0(var, "_12h"), "calculated"))) %>% set_colnames(c("Observed", "Calculated")) %>% plot_alluvial() + labs(title = func_format(var))
 ```
 
 ## Traitements
@@ -469,12 +527,15 @@ vars <- c(
   # "preciser_autre_ttt"
 )
 
-clinic2$preciser_biottt <- clinic2$preciser_biottt %>% str_remove_all(" durant.*") 
-clinic3 <- select(clinic2, c(all_of(vars), "groupe")) %>%
+clinic2$preciser_biottt <- clinic2$preciser_biottt %>% str_remove_all(" durant.*")
+clinic3 <- select(clinic2, c(all_of(vars), "groupe", "patient")) %>%
     rename_with(~ str_replace_all(.x, "_is", "_immunosuppresseurs") %>% str_replace_all("((bio)|(photo))ttt", "\\1therapie") %>% str_replace_all("ttt", "traitements") %>% str_replace_all("ctc", "corticoides topiques") %>% str_replace_all("d(corticoides)", "dermo\\1"))
 
 filter(clinic3, groupe != "HD") %>%
-  mplot_bar_2cat_clinic(colnames(.) %>% head(length(vars)), sort = c("DA", "PN"))   
+  mplot_bar_2cat_clinic(colnames(.) %>% head(length(vars)), sort = c("DA", "PN"))
+
+filter(clinic3, groupe != "HD") %>%
+  id_per_levels(colnames(.) %>% head(length(vars)))
 
 #   "derniere_application_dctc",
 # clinic2$temps_dp_dernier_emollient_heures <- clinic2$temps_dp_dernier_emollient_heures %>% str_remove_all("> ?") %>% as.numeric()

@@ -862,3 +862,25 @@ plot_top_cor <- function(x, vars, func = func_format, ...) {
   )
 }
 
+#' @export
+id_per_levels <- function(x, vars, n_min = 5) {
+  list.map(
+    vars,
+    f(i) ~group_by(x, groupe, !!sym(i)) %>%
+      summarise(
+        liste_patients = str_flatten(patient, collapse = ", "),
+        nb_patients = n(),
+        .groups = "drop"
+      ) %>%
+      filter(nb_patients <= n_min) %>%
+      mutate(variable = i) %>%
+      select(variable, groupe, levels = !!sym(i), liste_patients) %>%
+      filter(!is.na(levels))
+  ) %>%
+    list.rbind()
+}
+
+plot_venn_clinic <- function(x, ...) {
+  plot_venn(x, color_gradient = "white", ...) +
+    theme(legend.position = "none")
+}
