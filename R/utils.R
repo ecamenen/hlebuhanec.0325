@@ -831,3 +831,34 @@ metada_samples <- function(x, ids, ...) {
     rename_all(str_to_sentence) %>%
     kable0(...)
 }
+
+#' @export
+top_cor_variables <- function(x, vars, cutoff = .5, ...) {
+  mat_cor <- select(x, vars) %>%
+    correlate(cutoff = cutoff, ...) %>%
+    pluck(1)
+  mat_cor[upper.tri(mat_cor)] <- NA
+
+  as.data.frame(as.table(mat_cor)) %>%
+    filter(abs(Freq) > cutoff) %>%
+    select(-Freq) %>%
+    mutate(across(everything(), as.character))
+}
+
+#' @export
+plot_top_cor <- function(x, vars, func = func_format, ...) {
+  res <- top_cor_variables(x, vars, ...)
+
+  list.map(
+    seq(nrow(res)),
+    f(i) ~
+      slice(res, i) %>%
+      as.character() %>%
+      select(x, .) %>%
+      rename_all(func) %>%
+      plot_cor() +
+      scale_x_log10() +
+      scale_y_log10()
+  )
+}
+

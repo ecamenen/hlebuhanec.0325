@@ -243,62 +243,68 @@ func_format2 <- function(x) {
   str_replace_all("IG", "Ig")
 }
 
-filter(clinic2, groupe != "HD") %>%
-plot_violin_group(vars, func_format2, method = "wilcox") %>%
-  plot_grid(plotlist = ., ncol = 4)
+clinic3 <- mutate(clinic2, cd_ratio = cd4_micro_l / cd8_micro_l)
+
+p <- filter(clinic3, groupe != "HD") %>%
+  plot_violin_group(
+    vars1,
+    func_format2,
+    method = "wilcox",
+    display_log = TRUE
+  )
+plot_grid(plotlist = p[seq(8)], ncol = 4, align = "hv")
+plot_grid(plotlist = p[-seq(8)], ncol = 4, align = "hv")
 ```
 
 ```{r}
-table_groupe_numeric(clinic2, vars, file.path(path_fig, paste0("stats_biol.png")), format = func_format2)
+table_groupe_numeric(clinic3, vars1, file.path(path_fig, paste0("stats_biol.png")), format = func_format2)
 ```
 
 ```{r}
-filter(clinic2, groupe != "HD") %>%
-  mutate(across(vars0, ~ (. - min(., na.rm = TRUE)) / (max(., na.rm = TRUE) - min(., na.rm = TRUE)) * 100)) %>%
-  plot_radar_clinic(vars0, func = func_format2)
+filter(clinic3, groupe != "HD") %>%
+  mutate(across(vars2, ~ (. - min(., na.rm = TRUE)) / (max(., na.rm = TRUE) - min(., na.rm = TRUE)) * 100)) %>%
+  plot_radar_clinic(vars2, func = func_format2)
 ```
 
 ```{r, fig.width = 20, fig.height = 10}
-filter(clinic2, groupe != "HD") %>%
-    plot_heatmap_clinic(vars0, func = func_format2)
-filter(clinic2, groupe != "HD") %>%
-    plot_heatmap_clinic(vars0, normalize = "minmax", func = func_format2)
+filter(clinic3, groupe != "HD") %>%
+    plot_heatmap_clinic(vars1, func = func_format2)
+filter(clinic3, groupe != "HD") %>%
+    plot_heatmap_clinic(vars1, normalize = "minmax", func = func_format2)
 ```
 
 ```{r}
-select(clinic2, vars0) %>% 
-    rename_all(func_format) %>%
-    plot_mcor()
+clinic3 <- select(clinic2, c(all_of(vars0), "groupe")) %>% 
+    rename_all(func_format2)
+select(clinic3, -GROUPE) %>%
+  plot_mcor()
+
+p <- list.map(
+  c("DA", "PN"),
+  f(i) ~filter(clinic3, GROUPE == i) %>%
+  select(-GROUPE) %>%
+  plot_mcor() +
+    ggtitle(i)
+)
+p
 ```
 
 ```{r}
-select(clinic2, vars0) %>% 
-    rename_all(func_format) %>%
-    plot_cor_network(cutoff = .4, dyn = FALSE, label = TRUE)
+select(clinic3, -GROUPE) %>% 
+  plot_cor_network(cutoff = .4, dyn = FALSE, label = TRUE)
 ```
 
 ```{r}
-mat_cor <- select(clinic2, vars0) %>%
-    correlate(cutoff = .1) %>%
-    pluck(1)
-mat_cor[upper.tri(mat_cor)] <- NA
+plot_top_cor(clinic2, vars0, func_format2) %>%
+  plot_grid(plotlist = .)
 
-res <- as.data.frame(as.table(mat_cor)) %>%
-    filter(Freq > 0.5) %>%
-    select(-Freq) %>% 
-    mutate(across(everything(), as.character))
-
-list.map(
-  seq_along(res),
-  f(x) ~
-  slice(res, x) %>% 
-    as.character() %>% 
-    select(clinic2, .) %>%
-    rename_all(func_format) %>%
-    plot_cor() +
-    scale_x_log10() +
-    scale_y_log10()
-) %>% plot_grid(plotlist = .)
+p <- list.map(
+  c("DA", "PN"),
+  f(i) ~filter(clinic2, groupe == i) %>%
+  plot_top_cor(vars0, func_format2, cutoff = .4) %>%
+  plot_grid(plotlist = .)
+)
+p
 ```
 
 ```{r}
