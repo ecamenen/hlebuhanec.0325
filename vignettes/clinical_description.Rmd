@@ -578,25 +578,60 @@ plot_grid(plotlist = p[-seq(7)], ncol = 4, rel_widths = c(rep(2, 3), 2.75))
 plot_heatmap_clinic(clinic2, vars[seq(7)])
 ```
 
+## Others
 ```{r, fig.width = 8, fig.height = 3.7}
+vars <- c("ethnie", "da_pn")
 select(clinic2, ethnie, phototype) %>%
   plot_alluvial()
 ```
 
 ```{r}
-plot_bar_2cat_clinic(clinic2, c("ethnie", "da_pn"), pct = TRUE) %>%
+plot_bar_2cat_clinic(clinic2, vars, pct = FALSE) %>%
   plot_grid(plotlist = ., align = "hv")
+```
+
+```{r}
+select(clinic2, vars, groupe, patient) %>%
+    id_per_levels(colnames(.) %>% head(length(vars)), n_min = 5)
+
+filter(clinic2, ethnie == "Caucasian" & phototype %in% 4:6) %>%
+    select(patient, phototype) %>% arrange(phototype) %>% group_split(phototype) %>% map(~ .x %>% pull(patient))
 ```
 
 ## Atopie
 ```{r}
 vars <- c("terrain_atopique", "asthme", "da", "rhinite_allergique", "conjonctivite_allergique", "terrain_atopique_fam_1er_degre")
-plot_bar_2cat_clinic(clinic2, vars, pct = TRUE) %>%
+plot_bar_2cat_clinic(clinic2, vars, pct = FALSE) %>%
   plot_grid(plotlist = ., align = "hv")
+
+res <- select(clinic2, vars, groupe, patient) %>%
+    id_per_levels(colnames(.) %>% head(length(vars)), n_min = 4)
+res
+mutate(res, liste_patients = str_split(liste_patients, ",\\s*")) %>%
+    filter(groupe == "HD") %>%
+    select(variable, liste_patients) %>%
+    deframe() %>%
+    set_names(names(.) %>% func_format()) %>%
+  plot_venn(width_label = 15)
 ```
 
 ```{r, fig.width = 20, fig.height = 10}
-plot_heatmap_clinic(clinic2, vars)
+filter(clinic2, groupe == "HD") %>% plot_heatmap_clinic(vars, colour = palette_discrete()[c(1, 3)], width_text = 100)
+```
+
+
+```{r}
+res2 <- select(clinic2, vars, groupe, patient) %>%
+    id_per_levels(colnames(.) %>% head(length(vars)), n_min = Inf) %>%
+  filter(levels == "Yes") %>%
+  filter(groupe == "DA") %>%
+  select(variable, liste_patients) %>%
+    mutate(liste_patients = str_split(liste_patients, ",\\s*")) %>%
+  mutate(variable = func_format(variable)) %>%
+    deframe() %>%
+    as.list()
+custom_upset_barplot(res2, ratio = 1, width = 30)
+extract_combination(res2)
 ```
 
 ```{r, fig.width = 8, fig.height = 3.7}
