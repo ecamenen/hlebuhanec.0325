@@ -22,6 +22,7 @@ knitr::opts_chunk$set(
 library("hlebuhanec.0325")
 library("GimmeMyStats")
 library("GimmeMyPlot")
+library("GimmeMyOmics")
 library("RColorBrewer")
 library("rlist")
 library("ggrepel")
@@ -30,6 +31,7 @@ library("cowplot")
 library("janitor")
 library("naniar")
 library("openxlsx")
+plot_heatmap <- GimmeMyPlot::plot_heatmap
 data("clinic2")
 
 path_fig <- file.path(getwd(),  knitr::opts_chunk$get("fig.path"))
@@ -332,9 +334,127 @@ filter(clinic2, groupe == "DA") %>%
     plot_grid(plotlist = .)
 # [0-72]
 # severe: >21
+```
 
+```{r}
+res <- list(
+  filter(clinic2, easi_da < 20),
+  filter(clinic2, dlqi < 10) ,
+  filter(clinic2, eva_prurit < 6)
+) %>%
+  map(~pull(., patient)) %>%
+  set_names(c("easi_da", "dlqi", "eva_prurit") %>% func_format2())
+
+filter(clinic2, easi_da < 20 | dlqi < 10 | eva_prurit < 6 | eva_prurit_post_ttt > 6) %>% 
+  pull(patient) %>%
+  
+```
+
+
+```{r, fig.width = 20, fig.height = 10}
+filter(clinic2, groupe != "HD") %>%
+    plot_heatmap_clinic(c("dlqi", "eva_prurit", "easi_da"), func = func_format2)
+
+filter(clinic2, groupe == "PN") %>%
+    plot_heatmap_clinic(c("dlqi", "eva_prurit", "easi_da"), func = func_format2) +
+    scale_fill_gradientn(
+        colours = rev(brewer.pal(11, "RdBu")),
+        limits = c(-3.5, 2.5),
+        na.value = "white",
+        oob = scales::squish
+    )
+```
+
+```{r}
+library(scatterplot3d)
+
+data_3d <- clinic2 %>%
+    filter(groupe == "DA") %>%
+    select(c("patient", "dlqi", "eva_prurit", "easi_da")) %>%
+    # mutate(across(c(dlqi, eva_prurit, easi_da), ~ ifelse(is.na(.), median(., na.rm = TRUE), .))) %>%
+    na.omit() %>%
+    mutate(
+        minmax_dlqi = (dlqi - min(dlqi, na.rm = TRUE)) / (max(dlqi, na.rm = TRUE) - min(dlqi, na.rm = TRUE)),
+        minmax_eva_prurit = (eva_prurit - min(eva_prurit, na.rm = TRUE)) / (max(eva_prurit, na.rm = TRUE) - min(eva_prurit, na.rm = TRUE)),
+        minmax_easi_da = (easi_da - min(easi_da, na.rm = TRUE)) / (max(easi_da, na.rm = TRUE) - min(easi_da, na.rm = TRUE)),
+        median_minmax = rowMeans(cbind(minmax_dlqi, minmax_eva_prurit, minmax_easi_da))
+    )
+
+colour_palette <- colorRampPalette(c(brewer.pal(4, "Reds")[-1] %>% rev(), "grey", brewer.pal(4, "Blues")[-1]) %>% rev())(nrow(data_3d))
+colour_gradient <- colour_palette[rank(data_3d$median_minmax)]
+
+s3d <- scatterplot3d(
+    x = data_3d$dlqi,
+    y = data_3d$eva_prurit,
+    z = data_3d$easi_da,
+    xlab = "DLQI",
+    ylab = "EVA Prurit",
+    zlab = "EASI DA",
+    pch = "",
+    color = colour_gradient,
+    main = "3D Scatter Plot"
+)
+
+coords <- s3d$xyz.convert(data_3d$dlqi, data_3d$eva_prurit, data_3d$easi_da)
+
+text(
+    x = coords$x,
+    y = coords$y,
+    labels = data_3d$patient,
+    col = colour_gradient,
+    cex = 0.8
+)
+
+library(plotly)
+
+plot_ly(
+    data = data_3d,
+    x = ~dlqi,
+    y = ~eva_prurit,
+    z = ~easi_da,
+    type = "scatter3d",
+    mode = "text",
+    text = ~patient,
+    textfont = list(color = colour_gradient, size = 12)
+) %>%
+    layout(
+        title = "3D Scatter Plot",
+        scene = list(
+            xaxis = list(title = "DLQI"),
+            yaxis = list(title = "EVA Prurit"),
+            zaxis = list(title = "EASI DA")
+        )
+    )
+```
+
+
+```{r}
+data_2d <- clinic2 %>%
+    filter(groupe == "PN") %>%
+    select(c("patient", "dlqi", "eva_prurit")) %>%
+    mutate(
+        minmax_dlqi = (dlqi - min(dlqi, na.rm = TRUE)) / (max(dlqi, na.rm = TRUE) - min(dlqi, na.rm = TRUE)),
+        minmax_eva_prurit = (eva_prurit - min(eva_prurit, na.rm = TRUE)) / (max(eva_prurit, na.rm = TRUE) - min(eva_prurit, na.rm = TRUE)),
+        median_minmax = rowMeans(cbind(minmax_dlqi, minmax_eva_prurit), na.rm = TRUE)
+    )
+
+ggplot(data_2d, aes(x = dlqi, y = eva_prurit, label = patient, colour = median_minmax)) +
+    geom_text_repel(size = 3) +
+    scale_colour_gradientn(
+    colours = c(brewer.pal(4, "Blues")[-1] %>% rev(), "grey", brewer.pal(4, "Reds")[-1]),
+    name = "Median min-max"
+) +
+    labs(x = "DLQI", y = "EVA Prurit", title = "2D Scatter Plot") +
+    theme_classic() +
+    theme_custom()
+
+c("DA41", "DA15", "DA09", "DA18", "PN08", "PN10", "PN30", "PN35", "PN17", "PN22") %>% metada_samples(clinic2, .)
+```
+
+```{r}
+vars <- str_subset(colnames(clinic2), "iga_")
 list.map(
-    str_subset(colnames(clinic2), "iga_"),
+    vars,
     f(x, y) ~ {
         p <- mutate(clinic2, Group = !!sym(x)) %>%
             select(Group, groupe) %>%
@@ -349,7 +469,7 @@ list.map(
                 threshold = 1,
                 width_title = 20,
                 title = func_format2(x)
-            )
+            ) + labs(y = NULL)
                 if(y != 2)
                   p + theme(legend.position = "none")
                 else
@@ -358,7 +478,75 @@ list.map(
 ) %>%
     plot_grid(plotlist = ., rel_widths = c(2, 2.75, 2))
 
+res <- list.map(
+  vars,
+  f(x) ~ {
+        select(clinic2, x, groupe, patient) %>%
+    id_per_levels(colnames(.) %>% head(1), n_min = 5)
+    }
+)
 
+res[seq(2)] %>%
+    map(~mutate(., liste_patients = str_split(liste_patients, ",\\s*")) %>% pull(liste_patients)) %>%
+    unlist() %>%
+    metada_samples(clinic2, .)
+
+filter(clinic2, groupe != "HD") %>%
+  mutate(`.iga_post_ttt` = iga_post_ttt) %>%
+  select(c(".iga_post_ttt", all_of(vars))) %>%
+  rename_with(func_format) %>%
+  rename_all(function(x) str_to_upper(x)) %>%
+  plot_alluvial()
+
+filter(clinic2, groupe != "HD") %>%
+    select(c(all_of(vars), patient)) %>%
+    rename_with(func_format) %>%
+    rename_all(function(x) str_to_upper(x)) %>%
+    filter(!is.na(`IGA POST TTT`)) %>% 
+    relocate(`IGA POST TTT`)  %>%
+    relocate(PATIENT) %>%
+    arrange(`IGA POST TTT`) %>%
+    kable0()
+
+filter(clinic2, iga_post_ttt == "sévère") %>%
+  pull(patient) %>%
+  metada_samples(clinic2, .)
+
+p <- list.map(
+  c("DA", "PN"), 
+  f(x) ~{
+  if (x == "PN")
+  vars1 <- c("iga_pn", str_subset(colnames(clinic2), "nb_nodules_"))
+  else 
+    vars1 <- NULL
+  filter(clinic2, groupe == x) %>%
+    plot_heatmap_clinic(c("iga_da", "sc_atteinte_percent", vars1))
+  }
+)
+
+filter(clinic2, groupe == "DA") %>%
+    plot_heatmap_clinic(c("iga_da", "sc_atteinte_percent", vars1), sort = c("5-30%", "30-50%", "> 50%", "modérée", "sévère", "très sévère"), colour = c(brewer.pal(4, "Reds")[-1], brewer.pal(4, "Purples")[-1]))
+
+filter(clinic2, groupe == "PN") %>%
+    plot_heatmap_clinic(c(str_subset(colnames(clinic2), "nb_nodules_"), "sc_atteinte_percent", "iga_pn", "iga_da") %>% rev(), sort = c("10-50", "> 50", "< 5%", "5-30%", "30-50%", "> 50%", "modérée", "sévère", "très sévère"), colour = c(brewer.pal(3, "Greens")[-1], brewer.pal(5, "Reds")[-1], brewer.pal(4, "Purples")[-1]))
+
+cols_a_tester <- c("sc_atteinte_percent", "iga_da")#, "nb_nodules_actifs")
+valeurs_cibles <- c("> 50%", "très sévère")#, "> 50")
+
+lapply(seq_along(cols_a_tester), function(i) {
+    col <- cols_a_tester[i]
+    val <- valeurs_cibles[i]
+    
+    clinic2 %>%
+        filter(groupe == "DA") %>%
+        filter(.data[[col]] == val) %>%
+        pull(patient)
+}) %>%
+  setNames(cols_a_tester) %>%
+  plot_venn(n = 8)
+```
+
+```{r}
 x <- "sc_atteinte_percent"
 clinic2 %>%
   mutate(clinic2, Group = !!sym(x)) %>%
@@ -376,11 +564,9 @@ clinic2 %>%
       str_replace_all("percent", "\\(%\\)")
 )
 # severe: > 30
-```
 
-```{r, fig.width = 20, fig.height = 10}
-filter(clinic2, groupe != "HD") %>%
-    plot_heatmap_clinic(c("dlqi", "eva_prurit", "easi_da"), func = func_format2)
+select(clinic2, x, groupe, patient) %>%
+    id_per_levels(colnames(.) %>% head(1), n_min = 5)
 ```
 
 ```{r}
