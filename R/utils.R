@@ -886,3 +886,116 @@ plot_venn_clinic <- function(x, ...) {
   plot_venn(x, color_gradient = "white", ...) +
     theme(legend.position = "none")
 }
+#' @export
+plot_3d_text <- function(data, x, y, z, text, colour = c(brewer.pal(4, "Reds")[-1] %>% rev(), "grey", brewer.pal(4, "Blues")[-1]) %>% rev()) {
+
+  data_3d <- data %>%
+
+    filter(
+      !is.na(.data[[x]]),
+      !is.na(.data[[y]]),
+      !is.na(.data[[z]])
+    ) %>%
+
+    mutate(
+      across(
+        all_of(c(x, y, z)),
+        ~ (. - min(., na.rm = TRUE)) /
+          (max(., na.rm = TRUE) - min(., na.rm = TRUE)),
+        .names = "minmax_{.col}"
+      )
+    ) %>%
+
+    mutate(
+      median_minmax = rowMeans(
+          select(., starts_with("minmax_")),
+          na.rm = TRUE
+        )
+    )
+
+  colour_palette <- colorRampPalette(colour)(nrow(data_3d))
+  point_colours <- colour_palette[rank(data_3d$median_minmax)]
+
+  plot_ly(
+    data = data_3d,
+    x = ~ .data[[x]],
+    y = ~ .data[[y]],
+    z = ~ .data[[z]],
+    type = "scatter3d",
+    mode = "text",
+    text = ~ .data[[text]],
+    textfont = list(color = point_colours, size = 12)
+  ) %>%
+    layout(
+      scene = list(
+        xaxis = list(title = x),
+        yaxis = list(title = y),
+        zaxis = list(title = z)
+      )
+    )
+}
+
+#' @export
+plot_2d_text <- function(
+    data,
+    x,
+    y,
+    text,
+    colour_gradient = c(
+      rev(brewer.pal(4, "Blues")[-1]),
+      "grey",
+      brewer.pal(4, "Reds")[-1]
+    )
+) {
+
+  data_2d <- data %>%
+
+    filter(
+      !is.na(.data[[x]]),
+      !is.na(.data[[y]]),
+      !is.na(.data[[text]])
+    ) %>%
+
+    mutate(
+      across(
+        all_of(c(x, y)),
+        ~{
+          x_min <- min(., na.rm = TRUE)
+          x_max <- max(., na.rm = TRUE)
+
+          if (x_max == x_min) {
+            rep(0, length(.))
+          } else {
+            (. - x_min) / (x_max - x_min)
+          }
+        },
+        .names = "minmax_{.col}"
+      )
+    ) %>%
+
+    mutate(
+      median_minmax = rowMeans(
+        select(., starts_with("minmax_")),
+        na.rm = TRUE
+      )
+    )
+
+  ggplot(
+    data_2d,
+    aes(
+      x = .data[[x]],
+      y = .data[[y]],
+      label = .data[[text]],
+      colour = median_minmax
+    )
+  ) +
+    geom_text_repel(size = 3) +
+    scale_colour_gradientn(
+      colours = colour_gradient,
+      name = "Median min-max"
+    ) +
+    labs(x = x, y = y    ) +
+    theme_classic() +
+    theme_custom()
+
+}
