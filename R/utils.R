@@ -719,7 +719,7 @@ write_statistics <- function(x, file = file.path(getwd(), "statistics.xlsx"), fo
 }
 
 #' @export
-plot_heatmap_clinic <- function(x, vars, func = func_format, normalize = TRUE, ...) {
+plot_heatmap_clinic <- function(x, vars, func = func_format, normalize = TRUE, sort = FALSE, ...) {
   yintercept <- x %>%
     count(groupe) %>%
     deframe() %>%
@@ -729,7 +729,7 @@ plot_heatmap_clinic <- function(x, vars, func = func_format, normalize = TRUE, .
   column_to_rownames(x, "patient") %>%
     select(all_of(vars)) %>%
     rename_with(func) %>%
-    plot_heatmap(sort = FALSE, normalize = normalize, ...) +
+    plot_heatmap(sort = sort, normalize = normalize, ...) +
     geom_vline(
       xintercept = yintercept + .5,
       linewidth = 1,
@@ -788,10 +788,11 @@ plot_bar_2cat_clinic <- function(x, vars, sort = c("HD", "DA", "PN"), pct = FALS
 }
 
 #' @export
-mplot_bar_2cat_clinic <- function(x, vars, ...) {
-  p <- plot_bar_2cat_clinic(x, vars, ...)
-  plot_grid(plotlist = p[seq(8)], ncol = 4, nrow = 2, align = "hv") %>% print()
-  plot_grid(plotlist = p[-seq(8)], ncol = 4, nrow = 2, align = "hv")
+mplot_bar_2cat_clinic <- function(x, vars, ncol = 4, ...) {
+  p <- plot_bar_2cat_clinic(x, vars, ...)  %>%
+    map(~ .x + labs(y = NULL) + theme(legend.title = element_blank()))
+  plot_grid(plotlist = p[seq(8)], ncol = ncol, nrow = 2, align = "hv") %>% print()
+  plot_grid(plotlist = p[-seq(8)], ncol = ncol, nrow = 2, align = "hv")
 }
 
 #' @export
@@ -880,6 +881,7 @@ id_per_levels <- function(x, vars, n_min = 5) {
     list.rbind()
 }
 
+#' @export
 plot_venn_clinic <- function(x, ...) {
   plot_venn(x, color_gradient = "white", ...) +
     theme(legend.position = "none")
