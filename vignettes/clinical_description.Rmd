@@ -35,12 +35,6 @@ plot_heatmap <- GimmeMyPlot::plot_heatmap
 data("clinic2")
 
 path_fig <- file.path(getwd(),  knitr::opts_chunk$get("fig.path"))
-```
-
-```{r}
-table(clinic2$groupe) %>%
-    enframe(name = "Group", value = "N") %>%
-    kable0()
 
 func_format <- function(x) {
   str_replace_all(x, "_", " ") %>%
@@ -48,6 +42,12 @@ func_format <- function(x) {
   str_replace_all("micro l", "\\(ml\\)") %>%
   str_replace_all("mm3", "\\(mm3\\)")
 }
+```
+
+```{r}
+table(clinic2$groupe) %>%
+    enframe(name = "Group", value = "N") %>%
+    kable0()
 
 select(clinic2, -ipp) %>%
   write_statistics(file = file.path(path_fig, "statistics.xlsx"), format = function(x) func_format(x))
@@ -715,16 +715,51 @@ vars <- c(
 
 clinic2$preciser_biottt <- clinic2$preciser_biottt %>% str_remove_all(" durant.*")
 clinic3 <- select(clinic2, c(all_of(vars), "groupe", "patient")) %>%
-    rename_with(~ str_replace_all(.x, "_is", "_immunosuppresseurs") %>% str_replace_all("((bio)|(photo))ttt", "\\1therapie") %>% str_replace_all("ttt", "traitements") %>% str_replace_all("ctc", "corticoides topiques") %>% str_replace_all("d(corticoides)", "dermo\\1"))
+    rename_with(~ str_replace_all(.x, "_is", "_immunosuppresseurs") %>% str_replace_all("((bio)|(photo))ttt", "\\1therapie") %>% str_replace_all("ttt", "traitements") %>% str_replace_all("ctc", "corticoides topiques") %>% str_replace_all("d(corticoides)", "dermo\\1"))  %>%
+    mutate(across(everything(), ~ str_replace_all(., "^0$", "No")))  %>%
+    mutate(across(everything(), ~ str_replace_all(., "upilumab durant", "upilumab")))
+
+ids <- seq(4); sort <- c("takrozem", "ANTIBIO")
+ids <- 7:11; sort <- c("CTC PO", "methotrexate", "Tacrolymus", "thalidomide")
+ids <- 12:15; sort <- c("dupilumab", "olumiant")
+ids <- c(5:6, 16); sort <- NULL
+ids <- c(1, 6:7, 12); sort <- NULL
 
 filter(clinic3, groupe != "HD") %>%
-  mplot_bar_2cat_clinic(colnames(.) %>% head(length(vars)), sort = c("DA", "PN"))
+  mplot_bar_2cat_clinic(colnames(.)[ids], sort = c("DA", "PN"))
 
 filter(clinic3, groupe != "HD") %>%
-  id_per_levels(colnames(.) %>% head(length(vars)))
+  id_per_levels(colnames(.)[ids])
 
+filter(clinic3, groupe == "DA") %>%
+    plot_heatmap_clinic(
+    colnames(.)[ids],
+    colour = palette_discrete()[c(1, 3, 8, 2, 4, 5)],
+    width_text = 100,
+    sort = c("No", "Yes", sort)
+  )
+
+filter(clinic3, groupe == "DA") %>%
+  id_per_levels(colnames(.)[ids], n_min = Inf) %>%
+    filter(levels %in% c("Yes", sort)) %>%
+    select(variable, liste_patients) %>%
+    mutate(liste_patients = str_split(liste_patients, ",\\s*")) %>%
+    mutate(variable = func_format(variable)) %>%
+    deframe() %>%
+    as.list() %>%
+  split(names(.)) %>%
+  map(~ unlist(.x) %>% unique()) %>%
+  .[colnames(clinic3)[ids] %>% func_format()]  %>%
+    compact() %>%
+  plot_venn_clinic(n_max = 5, width_label = 15)
+custom_upset_barplot()
+
+c("PN17", "PN21", "PN01", "PN27") %>% 
+  metada_samples(clinic2, ids = .)
 #   "derniere_application_dctc",
 # clinic2$temps_dp_dernier_emollient_heures <- clinic2$temps_dp_dernier_emollient_heures %>% str_remove_all("> ?") %>% as.numeric()
+
+clinic3$immunosuppresseurs[which(clinic3$patient == "DA43")] <- "Yes"
 ```
 
 ## Samples
@@ -802,7 +837,10 @@ mutate(res, liste_patients = str_split(liste_patients, ",\\s*")) %>%
 ```
 
 ```{r, fig.width = 20, fig.height = 10}
-filter(clinic2, groupe == "HD") %>% plot_heatmap_clinic(vars, colour = palette_discrete()[c(1, 3)], width_text = 100)
+filter(clinic2, groupe == "HD") %>% plot_heatmap_clinic(vars, colour = palette_discrete()[c(1, 3)], width_text = 100, sort = c("No", "Yes"))
+
+filter(clinic2, terrain_atopique == "No" & terrain_atopique_fam_1er_degre == "Yes") %>% metada_samples(ids = pull(., "patient"))
+filter(clinic2, terrain_atopique == "Yes" & da == "No") %>% metada_samples(ids = pull(., "patient"))
 ```
 
 
