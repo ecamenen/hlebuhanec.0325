@@ -366,87 +366,14 @@ filter(clinic2, groupe == "PN") %>%
 ```
 
 ```{r}
-library(scatterplot3d)
-
-data_3d <- clinic2 %>%
+library("plotly")
+clinic2 %>%
     filter(groupe == "DA") %>%
-    select(c("patient", "dlqi", "eva_prurit", "easi_da")) %>%
-    # mutate(across(c(dlqi, eva_prurit, easi_da), ~ ifelse(is.na(.), median(., na.rm = TRUE), .))) %>%
-    na.omit() %>%
-    mutate(
-        minmax_dlqi = (dlqi - min(dlqi, na.rm = TRUE)) / (max(dlqi, na.rm = TRUE) - min(dlqi, na.rm = TRUE)),
-        minmax_eva_prurit = (eva_prurit - min(eva_prurit, na.rm = TRUE)) / (max(eva_prurit, na.rm = TRUE) - min(eva_prurit, na.rm = TRUE)),
-        minmax_easi_da = (easi_da - min(easi_da, na.rm = TRUE)) / (max(easi_da, na.rm = TRUE) - min(easi_da, na.rm = TRUE)),
-        median_minmax = rowMeans(cbind(minmax_dlqi, minmax_eva_prurit, minmax_easi_da))
-    )
+    plot_3d_text("dlqi", "eva_prurit", "easi_da", "patient")
 
-colour_palette <- colorRampPalette(c(brewer.pal(4, "Reds")[-1] %>% rev(), "grey", brewer.pal(4, "Blues")[-1]) %>% rev())(nrow(data_3d))
-colour_gradient <- colour_palette[rank(data_3d$median_minmax)]
-
-s3d <- scatterplot3d(
-    x = data_3d$dlqi,
-    y = data_3d$eva_prurit,
-    z = data_3d$easi_da,
-    xlab = "DLQI",
-    ylab = "EVA Prurit",
-    zlab = "EASI DA",
-    pch = "",
-    color = colour_gradient,
-    main = "3D Scatter Plot"
-)
-
-coords <- s3d$xyz.convert(data_3d$dlqi, data_3d$eva_prurit, data_3d$easi_da)
-
-text(
-    x = coords$x,
-    y = coords$y,
-    labels = data_3d$patient,
-    col = colour_gradient,
-    cex = 0.8
-)
-
-library(plotly)
-
-plot_ly(
-    data = data_3d,
-    x = ~dlqi,
-    y = ~eva_prurit,
-    z = ~easi_da,
-    type = "scatter3d",
-    mode = "text",
-    text = ~patient,
-    textfont = list(color = colour_gradient, size = 12)
-) %>%
-    layout(
-        title = "3D Scatter Plot",
-        scene = list(
-            xaxis = list(title = "DLQI"),
-            yaxis = list(title = "EVA Prurit"),
-            zaxis = list(title = "EASI DA")
-        )
-    )
-```
-
-
-```{r}
-data_2d <- clinic2 %>%
+clinic2 %>%
     filter(groupe == "PN") %>%
-    select(c("patient", "dlqi", "eva_prurit")) %>%
-    mutate(
-        minmax_dlqi = (dlqi - min(dlqi, na.rm = TRUE)) / (max(dlqi, na.rm = TRUE) - min(dlqi, na.rm = TRUE)),
-        minmax_eva_prurit = (eva_prurit - min(eva_prurit, na.rm = TRUE)) / (max(eva_prurit, na.rm = TRUE) - min(eva_prurit, na.rm = TRUE)),
-        median_minmax = rowMeans(cbind(minmax_dlqi, minmax_eva_prurit), na.rm = TRUE)
-    )
-
-ggplot(data_2d, aes(x = dlqi, y = eva_prurit, label = patient, colour = median_minmax)) +
-    geom_text_repel(size = 3) +
-    scale_colour_gradientn(
-    colours = c(brewer.pal(4, "Blues")[-1] %>% rev(), "grey", brewer.pal(4, "Reds")[-1]),
-    name = "Median min-max"
-) +
-    labs(x = "DLQI", y = "EVA Prurit", title = "2D Scatter Plot") +
-    theme_classic() +
-    theme_custom()
+    plot_2d_text(x = "dlqi", y = "eva_prurit", text = "patient")
 
 c("DA41", "DA15", "DA09", "DA18", "PN08", "PN10", "PN30", "PN35", "PN17", "PN22") %>% metada_samples(clinic2, .)
 ```
