@@ -245,3 +245,47 @@ list.map(
 )
 
 use_data(clinic2, overwrite = TRUE)
+
+#########################################
+clinic3 <- clinic2
+clinic3[clinic3$patient == "PN42", ]$age <- 48
+clinic3[clinic3$patient == "PN36", ]$age <- 23
+clinic3[clinic3$patient == "HD21", ]$date_naissance <- as.Date("2002-01-01")
+clinic3 <- clinic3 %>%
+  mutate(
+    autres_comorbidites = case_when(
+    !is.na(preciser_comorbidites) & autres_comorbidites == "No" ~ "Yes",
+    TRUE ~ autres_comorbidites
+  ),
+  da_pn = case_when(
+    da_pn == "No" & groupe == "PN" & da == "Yes" ~ "Yes",
+    da_pn == "Yes" & groupe == "PN" & da == "No" ~ "No",
+    TRUE ~ da_pn
+  ),
+  preciser_immunosuppresseurs = if_else(
+    preciser_immunosuppresseurs %in% c("Tacrolymus", "methotrexate"),
+    NA_character_,
+    preciser_immunosuppresseurs
+  ),
+  preciser_immunosuppresseurs = if_else(
+    preciser_immunosuppresseurs == "0",
+    "No",
+    preciser_immunosuppresseurs
+  ),
+  autres_is = if_else(
+    autres_is == "No" & !is.na(preciser_immunosuppresseurs) & preciser_immunosuppresseurs != "No",
+    "Yes",
+    autres_is
+  ),
+  immunosuppresseurs = if_else(
+    immunosuppresseurs == "No" & (autres_is == "Yes" | methotrexate == "Yes" | ctc_systemique == "Yes"),
+    "Yes",
+    immunosuppresseurs
+  ),
+  preciser_biottt = case_when(
+    str_detect(preciser_biottt, "dupilumab") | preciser_biottt == "0" ~ "No",
+    TRUE ~ preciser_biottt
+  )
+)
+
+use_data(clinic3)
