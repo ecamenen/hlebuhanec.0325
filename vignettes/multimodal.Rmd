@@ -1,0 +1,97 @@
+---
+title: "multimodal"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{multimodal}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library("hlebuhanec.0325")
+library("readxl")
+library("tidyverse")
+library("GimmeMyPlot")
+```
+
+## Data
+```{r}
+path_data <- file.path("C:", "Users", "etien", "DATA", "hlebuhanec")
+metabo_id <- read_xlsx(file.path(path_data, "Metabolomic", "données", "LORF-01-25SL_DATA TABLES.xlsx"), sheet = 3) %>% 
+  pull("SUBJECT_OR_ANIMAL_ID") %>%
+  unique() %>%
+  discard(function(x) x == "NA") %>%
+  str_replace_all("DAPN01", "PN01") %>% 
+  sort()
+
+microbiote_id <- read_delim(file.path(path_data, "microbiome", "Final Analysis Alban 01-26", "taxonomy", "alpha", "no_rarefaction", "alpha_div_metrics.txt")) %>%
+  pull("...1") %>% 
+  unique() %>%
+  sort() %>%
+  str_extract("^[^_-]+")
+
+mirna_id <- read_delim(file.path(path_data, "transcriptomic", "skin_metadata_miRNA_batch_1_2_geneglobe.csv")) %>% 
+  pull(Alias) %>%
+  sort()
+
+rna_id <- read_delim(file.path(path_data, "transcriptomic", "skin_metadata_mRNA_batch_1_2_name_modified.csv")) %>%
+  pull(Alias) %>%
+  sort()
+
+lncrna_id <- read_xlsx(file.path(path_data,  "transcriptomic", "lncRNA", "tab.lncRNA.countOrig.xlsx")) %>%
+  select(-seq(3)) %>%
+  ncol()
+```
+
+```{r}
+l_omics <- list(Metabolome = metabo_id, Microbiote = microbiote_id, miRNA = mirna_id, RNA = rna_id)
+list.map(l_omics, f(x, y, z) ~str_extract(x, "^.{2}") %>% fct_count() %>% column_to_rownames("f") %>% set_colnames(z)) %>% list_cbind() %>% as.matrix() %>% 
+    plot_bar_2cat(count = TRUE,  workspace = 1e6, pct = FALSE, stats = FALSE) + labs(y = NULL) + theme(legend.title = element_blank())
+
+plot_venn(l_omics)
+
+common_ids <- Reduce(intersect, l_omics)
+
+common_ids %>%
+  str_extract("^.{2}") %>%
+  fct_count() %>%
+  set_colnames(c("", "N")) %>%
+  kable0()
+```
+
+```{r}
+data("clinic3")
+
+vars <- colnames(clinic3)[c(12:22, 28:31, 34:35, 40:48, 50:51)]
+clinic4 <- clinic3 %>%
+  filter(patient != "DA11") %>%
+  # filter(patient %in% common_ids) %>%
+  select(c(patient, groupe, sexe, ethnie, age,  all_of(vars), tacrolimus_topique, comorbidites, ttt_chroniques, autres_comorbidites))
+         
+clinic4 <- clinic4 %>%
+  mutate(across(
+    .cols = -1 & where(is.character),
+    .fns = ~ as.factor(.x)
+  )) %>%
+  mutate(across(
+    c(da_pn, asthme, tacrolimus_topique, autres_comorbidites, all_of(colnames(clinic3)[16:18])),
+    ~ fct_explicit_na(.x, na_level = "No")
+  )) %>%
+  mutate(ethnie =  fct_explicit_na(ethnie, na_level = "Caucasian"))
+
+use_data(clinic4, overwrite = TRUE)
+# derniere_application_dctc
+```
+
+
+## Session information
+```{r end, echo = FALSE}
+sessionInfo()
+```
