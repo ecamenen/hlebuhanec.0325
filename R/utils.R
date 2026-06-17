@@ -864,8 +864,8 @@ plot_top_cor <- function(x, vars, func = func_format, ...) {
 }
 
 #' @export
-id_per_levels <- function(x, vars, n_min = 5) {
-  list.map(
+id_per_levels <- function(x, vars, n_min = 5, is_na = FALSE) {
+  res <- list.map(
     vars,
     f(i) ~group_by(x, groupe, !!sym(i)) %>%
       summarise(
@@ -875,10 +875,14 @@ id_per_levels <- function(x, vars, n_min = 5) {
       ) %>%
       filter(nb_patients <= n_min) %>%
       mutate(variable = i) %>%
-      select(variable, groupe, levels = !!sym(i), liste_patients) %>%
-      filter(!is.na(levels))
+      select(variable, groupe, levels = !!sym(i), liste_patients)
   ) %>%
     list.rbind()
+
+  if (isFALSE(is_na))
+    filter(res, !is.na(levels))
+  else
+    res
 }
 
 #' @export
