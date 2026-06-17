@@ -32,20 +32,37 @@ library(ggrepel)
 library(kableExtra)
 library(patchwork)
 library(corrplot)
+
+colPers <- c("blue", "grey", "red")
 ```
 
 ## Data preparation
-```{r}
+```{r, eval = FALSE}
 data("clinic_cat")
 clinic_cat <- clinic_cat %>%
   # filter(str_detect(rownames(., "^P11\\."))) %>%
   mutate(across(where(is.character), as.factor)) %>%
   mutate(across(where(is.factor), fct_drop))
-colPers <- c("blue", "grey", "red")
+```
+
+```{r}
+data("clinic4")
+clinic_cat <- clinic4 %>%
+    as.data.frame() %>%
+    column_to_rownames("patient") %>%
+    select(where(is.factor)) %>%
+    filter(groupe != "HD") %>%
+    mutate(across(everything(), fct_drop)) %>%
+    select(-c(nb_nodules_pn, nb_nodules_actifs, iga_pn))
+
+rownames_to_column(clinic_cat, "patient") %>% id_per_levels(colnames(.)[-seq(2)], is_na = TRUE) %>% 
+  filter(is.na(levels))
+
+extract_main_modality(clinic_cat, "groupe", .95)
 ```
 
 ## Data cleaning
-```{r}
+```{r, eval = FALSE}
 na_column <- clinic_cat %>%
     apply(2, function(x) (is.na(x)) %>% which() %>% length()) %>%
     .[. != 0] %>% 
@@ -53,12 +70,14 @@ na_column <- clinic_cat %>%
 
 clinic_cat <- clinic_cat %>%
   select(-na_column)
+```
 
+```{r}
 tab_stats <- list.map(clinic_cat, f(x, x, z) ~ select(clinic_cat, z) %>% print_multinomial()) %>% 
   list.rbind()
 
 rare_mod <- mutate(tab_stats, N = str_remove_all(Statistics, " \\(.*") %>% as.numeric()) %>% 
-    filter(N <= 5)
+    filter(N < 5)
 rare_mod %>% arrange(N) %>%
   kable0()
 ```
@@ -77,8 +96,6 @@ plot_eig(eigenval, "mean", "Eigen value")
 eig_pct <- eigenval %>% divide_by(sum(.)) %>% multiply_by(100)
 
 plot_eig(eig_pct, "mean") + plot_eig(eig_pct, "cum")
-
-p1 + p2
 
 fviz_screeplot(
     res_mca,
@@ -102,9 +119,9 @@ corrplot(
   col = colorRampPalette(c(rev(brewer.pal(3, "Blues")), "grey", brewer.pal(3, "Reds")))(100)
 )
 
-plot_ctr(res_mca)
-p[[1]] / p[[2]]
-p[[3]] / p[[4]]
+p <- plot_ctr(res_mca)
+p[[1]] + p[[2]]
+p[[3]] + p[[4]]
 
 fviz_mca_ind(
     res_mca,
@@ -119,17 +136,18 @@ fviz_mca_ind(
 
 p <- list.map(
   seq(4),
-  f(x) ~fviz_contrib(res_mca, choice = "var", axes = x, top = 50) + 
+  f(x) ~fviz_contrib(res_mca, choice = "ind", axes = x, top = 50) + 
     GimmeMyPlot:::theme_custom(cex = 0.8) +
     ggtitle(paste("Dimension", x))
 )
 p[[1]] / p[[2]]
 p[[3]] / p[[4]]
 
-group_vector <- clinic_cat[rownames(res_mca0$li), "Group"]
+group_vector <- clinic_cat[rownames(res_mca0$li), "groupe"]
 fviz_mca_ind(
     res_mca,
-    label = "none",
+    # label = "none",
+    repel = TRUE,
     axes = c(1, 2),
     habillage = group_vector,
     palette = GimmeMyPlot:::palette_discrete(),
@@ -141,7 +159,7 @@ fviz_mca_ind(
 ```
 
 ## Variable plots
-```{r}
+```{r, eval = FALSE}
 pattern <- paste0(
   "^(",
   paste(
@@ -180,14 +198,35 @@ corrplot(
   col = colorRampPalette(c(rev(brewer.pal(3, "Blues")), "grey", brewer.pal(3, "Reds")))(100)
 )
 
-plotellipses(res_mca)
+# plotellipses(res_mca)
+ids <- split(seq_along(clinic_cat), ceiling(seq_along(clinic_cat)/7))
+p <- list.map(
+  ids,
+  plotellipses(res_mca, .)
+)
 boxplot(res_mca0)
 boxplot(res_mca0, xax = 2)
-scatter(res_mca, col = GimmeMyPlot:::palette_discrete())
+
+oritab <- eval(as.list(res_mca0$call)[[2]])
+list.map(
+  ids,
+  sco.boxplot(res_mca0$l1[, 1], oritab[, colnames(oritab)[.]], clabel = 1)
+)
+
+scatter(res_mca0, col = GimmeMyPlot:::palette_discrete())
+
+p <- list.map(
+  seq(4),
+  f(x) ~fviz_contrib(res_mca, choice = "var", axes = x, top = 50) + 
+    GimmeMyPlot:::theme_custom(cex = 0.8) +
+    ggtitle(paste("Dimension", x))
+)
+p[[1]] / p[[2]]
+p[[3]] / p[[4]]
 
 i <- 1
 plot_bar(
-  res_mca$cr[, i, drop = FALSE] * 100,
+  res_mca0$cr[, i, drop = FALSE] * 100,
   label_x = "value",
   threshold = 0,
   digits = 2,
@@ -207,7 +246,9 @@ fviz_mca_var(
     res_mca,
     axes = c(1, 2),
     col.var = "cos2",
-    ggtheme = theme_minimal()
+    ggtheme = theme_minimal(),
+    repel = TRUE,
+    gradient.cols = colPers
 ) %>% theme_perso_2D()
 ```
 
