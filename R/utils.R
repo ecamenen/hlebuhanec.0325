@@ -934,6 +934,7 @@ plot_2d_text <- function(
 
 }
 
+#' @export
 extract_main_modality <- function(df, col_groupe, threshold = 0.75) {
     df %>%
       pivot_longer(-all_of(col_groupe), names_to = "variable", values_to = "levels") %>%
@@ -948,3 +949,386 @@ extract_main_modality <- function(df, col_groupe, threshold = 0.75) {
       ungroup() %>%
       select(variable, groupe = all_of(col_groupe), levels, statistics)
   }
+
+
+#' @export
+plot_pca0 <- function(m, var = "Sex") {
+
+  # PCA
+  pca <- prcomp(t(m), scale. = FALSE)
+
+  pca_data <- pca$x %>%
+    as.data.frame() %>%
+    rownames_to_column("Patient") %>%
+    left_join(metadata_rna, by = "Patient")
+
+  if (!var %in% names(pca_data)) {
+    stop("La variable '", var, "' n'existe pas dans pca_data.")
+  }
+
+  percentVar <- pca$sdev^2 / sum(pca$sdev^2)
+
+  # Détection du type de variable
+  is_numeric <- is.numeric(pca_data[[var]])
+
+  if (is_numeric) {
+
+    # Variable numérique : séparation low / high à la médiane
+    med <- median(pca_data[[var]], na.rm = TRUE)
+
+    pca_data$.plot_group <- factor(
+      ifelse(pca_data[[var]] <= med, "low", "high"),
+      levels = c("low", "high")
+    )
+
+    # Données longues pour les régressions
+    pca_long <- pca_data %>%
+      select(all_of(var), PC1, PC2) %>%
+      pivot_longer(
+        cols = c(PC1, PC2),
+        names_to = "PC",
+        values_to = "value"
+      ) %>%
+      filter(
+        !is.na(.data[[var]]),
+        is.finite(value),
+        is.finite(.data[[var]])
+      )
+
+    # Régression linéaire pour chaque PC
+    test_formula <- reformulate(
+      var,
+      response = "value"
+    )
+
+    stats <- pca_long %>%
+      group_by(PC) %>%
+      group_modify(~ {
+        dat <- .x
+
+        if (nrow(dat) < 3 ||
+            n_distinct(dat[[var]]) < 2) {
+          return(tibble(p = NA_real_))
+        }
+
+        fit <- stats::lm(test_formula, data = dat)
+
+        tibble(
+          p = summary(fit)$coefficients[2, 4]
+        )
+      }) %>%
+      ungroup() %>%
+      mutate(
+        label = paste0(
+          PC, " : régression, p = ",
+          format.pval(p, digits = 3, eps = 0.001)
+        )
+      )
+
+  } else {
+
+    # Variable catégorielle
+    pca_data$.plot_group <- as.factor(pca_data[[var]])
+
+    pca_long <- pca_data %>%
+      select(.plot_group, PC1, PC2) %>%
+      tidyr::pivot_longer(
+        cols = c(PC1, PC2),
+        names_to = "PC",
+        values_to = "value"
+      ) %>%
+      filter(
+        !is.na(.plot_group),
+        is.finite(value)
+      )
+
+    n_groups <- nlevels(droplevels(pca_data$.plot_group))
+
+    if (n_groups < 2) {
+      stop("La variable doit contenir au moins 2 groupes.")
+    }
+
+    test_fun <- if (n_groups == 2) {
+      wilcox_test
+    } else {
+      kruskal_test
+    }
+
+    stats <- pca_long %>%
+      group_by(PC) %>%
+      group_modify(~ {
+        dat <- .x
+
+        if (n_distinct(dat$.plot_group) < 2) {
+          return(tibble(p = NA_real_))
+        }
+
+        test_fun(dat, value ~ .plot_group) %>%
+          select(p)
+      }) %>%
+      ungroup() %>%
+      mutate(
+        label = paste0(
+          PC, " : ",
+          if (n_groups == 2) "Wilcoxon" else "Kruskal-Wallis",
+          ", p = ",
+          format.pval(p, digits = 3, eps = 0.001)
+        )
+      )
+  }
+
+  # Sous-titre
+  subtitle_text <- paste(stats$label, collapse = " | ")
+
+  # Centroïdes
+  centroids <- pca_data %>%
+    filter(
+      !is.na(.plot_group),
+      is.finite(PC1),
+      is.finite(PC2)
+    ) %>%
+    group_by(.plot_group) %>%
+    summarise(
+      PC1 = mean(PC1),
+      PC2 = mean(PC2),
+      .groups = "drop"
+    )
+
+  # Graphique
+
+  p <- ggplot(
+    pca_data,
+    aes(PC1, PC2)
+  ) +
+    geom_point(
+      aes(
+        color = if (is_numeric) .data[[var]] else .plot_group
+      ),
+      na.rm = TRUE
+    ) +
+    stat_ellipse(
+      aes(group = .plot_group),
+      color = "black",
+      na.rm = TRUE
+    ) +
+    geom_point(
+      data = centroids,
+      aes(PC1, PC2),
+      color = "black",
+      shape = 4,
+      size = 5,
+      stroke = 1.5
+    ) +
+    labs(
+      x = paste0(
+        "PC1 : ", round(percentVar[1] * 100, 1),
+        "% variance"
+      ),
+      y = paste0(
+        "PC2 : ", round(percentVar[2] * 100, 1),
+        "% variance"
+      ),
+      subtitle = subtitle_text,
+      color = var
+    ) +
+    theme_minimal() +
+    theme_custom()
+
+  if (is_numeric) {
+    p <- p +
+      scale_color_gradientn(
+        colours = rev(brewer.pal(11, "RdBu")),
+        name = var,
+        na.value = "grey70"
+      )
+  } else {
+    p <- p +
+      scale_color_discrete(
+        type = palette_discrete()
+      )
+  }
+
+
+  p
+}
+
+#' @export
+plot_pca2 <- function(m, metadata_rna, var = "Sex", id = "Patient") {
+
+  # PCA
+  pca <- prcomp(t(m), scale. = FALSE)
+
+  pca_data <- pca$x %>%
+    as.data.frame() %>%
+    rownames_to_column(id) %>%
+    left_join(metadata_rna, by = id)
+
+  if (!var %in% names(pca_data)) {
+    stop("La variable '", var, "' n'existe pas dans pca_data.")
+  }
+
+  percentVar <- pca$sdev^2 / sum(pca$sdev^2)
+
+  # Détection du type de variable
+  is_numeric <- is.numeric(pca_data[[var]])
+
+  if (is_numeric) {
+
+    # Variable numérique : séparation low / high à la médiane
+    med <- median(pca_data[[var]], na.rm = TRUE)
+
+    pca_data$.plot_group <- factor(
+      ifelse(pca_data[[var]] <= med, "low", "high"),
+      levels = c("low", "high")
+    )
+
+    # Données longues pour les régressions
+    pca_long <- pca_data %>%
+      select(all_of(var), PC1, PC2) %>%
+      pivot_longer(
+        cols = c(PC1, PC2),
+        names_to = "PC",
+        values_to = "value"
+      ) %>%
+      filter(
+        !is.na(.data[[var]]),
+        is.finite(value),
+        is.finite(.data[[var]])
+      )
+
+    # Régression linéaire pour chaque PC
+    test_formula <- reformulate(
+      var,
+      response = "value"
+    )
+
+    stats <- pca_long %>%
+      group_by(PC) %>%
+      group_modify(~ {
+        dat <- .x
+
+        if (nrow(dat) < 3 ||
+            n_distinct(dat[[var]]) < 2) {
+          return(tibble(p = NA_real_))
+        }
+
+        fit <- lm(test_formula, data = dat)
+
+        tibble(
+          p = summary(fit)$coefficients[2, 4]
+        )
+      }) %>%
+      ungroup() %>%
+      mutate(
+        label = paste0(
+          PC, " : régression, p = ",
+          format.pval(p, digits = 3, eps = 0.001)
+        )
+      )
+
+  } else {
+
+    # Variable catégorielle
+    pca_data$.plot_group <- as.factor(pca_data[[var]])
+
+    pca_long <- pca_data %>%
+      select(.plot_group, PC1, PC2) %>%
+      pivot_longer(
+        cols = c(PC1, PC2),
+        names_to = "PC",
+        values_to = "value"
+      ) %>%
+      filter(
+        !is.na(.plot_group),
+        is.finite(value)
+      )
+
+    n_groups <- nlevels(droplevels(pca_data$.plot_group))
+
+    if (n_groups < 2) {
+      stop("La variable doit contenir au moins 2 groupes.")
+    }
+
+    test_fun <- if (n_groups == 2) {
+      rstatix::wilcox_test
+    } else {
+      rstatix::kruskal_test
+    }
+
+    stats <- pca_long %>%
+      group_by(PC) %>%
+      group_modify(~ {
+        dat <- .x
+
+        if (n_distinct(dat$.plot_group) < 2) {
+          return(tibble(p = NA_real_))
+        }
+
+        test_fun(dat, value ~ .plot_group) %>%
+          select(p)
+      }) %>%
+      ungroup() %>%
+      mutate(
+        label = paste0(
+          PC, " : ",
+          if (n_groups == 2) "Wilcoxon" else "Kruskal-Wallis",
+          ", p = ",
+          format.pval(p, digits = 3, eps = 0.001)
+        )
+      )
+  }
+
+  # Sous-titre
+  subtitle_text <- paste(stats$label, collapse = " | ")
+
+  # Centroïdes
+  centroids <- pca_data %>%
+    filter(
+      !is.na(.plot_group),
+      is.finite(PC1),
+      is.finite(PC2)
+    ) %>%
+    group_by(.plot_group) %>%
+    summarise(
+      PC1 = mean(PC1),
+      PC2 = mean(PC2),
+      .groups = "drop"
+    )
+
+  # Graphique
+  ggplot(
+    pca_data,
+    aes(PC1, PC2, color = .plot_group)
+  ) +
+    geom_point(
+      na.rm = TRUE
+    ) +
+    stat_ellipse(
+      aes(group = .plot_group),
+      na.rm = TRUE
+    ) +
+    geom_point(
+      data = centroids,
+      aes(PC1, PC2, color = .plot_group),
+      shape = 4,
+      size = 5,
+      stroke = 1.5
+    ) +
+    labs(
+      x = paste0(
+        "PC1 : ", round(percentVar[1] * 100, 1),
+        "% variance"
+      ),
+      y = paste0(
+        "PC2 : ", round(percentVar[2] * 100, 1),
+        "% variance"
+      ),
+      subtitle = subtitle_text,
+      color = if (is_numeric) paste0(var, " (médiane)") else var
+    ) +
+    theme_minimal() +
+    theme_custom() +
+    scale_color_discrete(
+      type = palette_discrete()
+    )
+}
