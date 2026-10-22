@@ -1,0 +1,108 @@
+---
+title: "RGCCA"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{RGCCA}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(hlebuhanec.0325)
+library(RGCCA)
+library(GimmeMyPlot)
+library(tidyverse)
+library(rlist)
+library(GimmeMyOmics)
+```
+
+## Data preparation
+```{r}
+data("microbiome_adj_pn")
+data("counts_adj_pn")
+
+l_name_omics <- list(RNA = colnames(counts_adj_pn), Microbiome = colnames(microbiome_adj_pn))
+plot_venn(l_name_omics)
+
+common_ids <- intersect(l_name_omics[[1]], l_name_omics[[2]])
+blocks <- list(Microbiome = microbiome_adj_pn, RNA = counts_adj_pn) %>%
+  list.map(t(.[, common_ids]) %>% as.matrix())
+
+lapply(blocks, dim)
+```
+
+## Analysis
+```{r}
+# a_rgcca <- rgcca(blocks, ncomp = rep(2, 2))
+a_rgcca <- rgcca(blocks, sparsity = c(1, .1), ncomp = rep(2, 2), method = "sgcca")#, scheme = "horst", tau = 0)
+```
+
+## QC
+```{r}
+summary(a_rgcca)
+a_rgcca$AVE$AVE_X
+plot(a_rgcca, type = "ave", AVE_colors = palette_discrete(), cex = 1.5)
+```
+
+## Plot
+
+### Samples
+```{r}
+p <- list.map(names(blocks), f(x) ~list.map(seq(2), f(i) ~plot_bar_rgcca(abs(a_rgcca$Y[[x]][, i]))))
+
+p$Microbiome[[1]] | p$Microbiome[[2]]
+p$RNA[[1]] | p$RNA[[2]]
+
+plot(a_rgcca, block = 1, type = "samples")
+plot(a_rgcca, block = 2, type = "samples")
+```
+
+
+### variable bar_plot
+```{r}
+data("biomart_annotation")
+metadata_rna <- biomart_annotation$hsapiens_113
+
+# plot(a_rgcca, var_colors  = "red", type = "loadings", comp = 2)
+
+# Weights
+p <- list.map(seq(2), f(x, y) ~{
+  if(y == 1)
+    metadata <- NULL
+  else
+    metadata <- metadata_rna
+  list.map(seq(2), f(i) ~get_ctr_rgcca(a_rgcca, x, i, metadata = metadata) %>%
+    plot_bar_rgcca()
+  )
+    }
+  )
+p[[1]][[1]] | p[[1]][[2]]
+p[[2]][[1]] | p[[2]][[2]]
+
+# Loadings
+cor_val <- get_cor_rgcca(a_rgcca, 2, metadata = metadata_rna)
+cor_val2 <- get_cor_rgcca(a_rgcca, 2, 2, metadata = metadata_rna, method_adjust = "none")
+plot_bar_rgcca(cor_val) | plot_bar_rgcca(cor_val2)
+
+get_cor_rgcca(a_rgcca) %>%
+  plot_bar_rgcca() | 
+get_cor_rgcca(a_rgcca, comp = 2, method_adjust = "none") %>%
+    plot_bar_rgcca()
+```
+
+### Corcircle plot
+```{r}
+plot(a_rgcca, block = 1, type = "cor_circle", var_colors = palette_discrete(), repel = TRUE, n_mark = 15)
+```
+
+## Session information
+```{r end, echo = FALSE}
+sessionInfo()
+```
