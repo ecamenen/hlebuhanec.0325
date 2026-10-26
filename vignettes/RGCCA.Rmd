@@ -154,20 +154,32 @@ p[[5]][[1]] | p[[5]][[2]]
 ### Corcircle plot
 ```{r}
 # plot(a_rgcca, block = 1, type = "cor_circle", var_colors = palette_discrete(), repel = TRUE, n_mark = 15)
-
-blocks2 <- c(blocks, superblock = list(cbind(blocks[[1]], blocks[[2]])))
+superblock = list(superblock = cbind(blocks[[1]], blocks[[2]]))
+blocks2 <- c(blocks, rep(superblock, 3))
 
 p <- list.map(
-  c(names(a_rgcca$blocks), rep("superblock", 2)),
+  names(blocks2),
   f(x, y) ~{
-  if (y %in% c(1, 4))
+  if (y %in% c(1, 4)) {
     metadata <- metadata_microbiome
-  else if (y %in% 2:3)
+    if (y == 1) {
+      a_block <- blocks2[[y]]
+    } else {
+      a_block <- blocks[[1]]
+    }
+  } else if (y %in% 2:3) {
     metadata <- metadata_rna
-  else
+    if (y == 2) {
+      a_block <- blocks2[[y]]
+    } else {
+      a_block <- blocks[[2]]
+    }
+  } else {
     metadata <- metadata_superblock
+    a_block <- blocks2[[y]]
+  }
     list(ind = list(coord = a_rgcca$Y[[x]]), eig = rep(a_rgcca$AVE$AVE_X[[x]] * 100) %>% data.frame(., .)) %>%
-  plot_cor_circle(blocks2[[x]], n_max = 30, metadata = metadata)
+  plot_cor_circle(a_block, n_max = 30, metadata = metadata)
   }
 )
 p
