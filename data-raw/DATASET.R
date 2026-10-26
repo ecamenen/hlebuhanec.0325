@@ -289,3 +289,27 @@ clinic3 <- clinic3 %>%
 )
 
 use_data(clinic3)
+
+#########################################
+path_data_rna <- file.path(path_data, "mRNA_raw_counts_29apparies_20HD_tsv (1)")
+
+metadata_rna <- read_tsv(file.path(path_data_rna, "metadata_mRNA_29apparies_20HD.tsv"))
+use_data(metadata_rna, overwrite = TRUE)
+
+rna_raw <- read_tsv(file.path(path_data_rna,"mRNA_raw_counts_29apparies_20HD.tsv"))
+use_data(rna_raw, overwrite = TRUE)
+
+path_data_microbiome <- file.path(path_data, "Microbiome_scenarioA_CLR_corrige_42_tsv (2)")
+
+metadata_microbiome <- read_tsv(file.path(path_data_microbiome, "metadata_microbiome_42.tsv"))
+use_data(metadata_microbiome, overwrite = TRUE)
+
+microbiome_processed <- read_tsv(file.path(path_data_microbiome,"microbiome_scenarioA_CLR_corrige_sansFaibleProf_38.tsv"))
+use_data(microbiome_processed, overwrite = TRUE)
+
+l_files_microbiome <- list.files(path_data_microbiome) %>%
+  list.map(f(x) ~read_tsv(file.path(path_data_microbiome, x)))
+
+rna_raw_tot <- read_tsv(file.path(path_data, "transcriptomic", "mRNA/tab_RNAseq_TPM.txt")) %>%
+  rename_with(~ str_remove_all(.x, "-|b"))
+
