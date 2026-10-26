@@ -26,7 +26,9 @@ get_ctr_rgcca <- function(x, block = 1, comp = 1, metadata = NULL) {
 #' @export
 join_metadata <- function(x, metadata = NULL) {
   if (!is.null(metadata)) {
-    x <- rownames_to_column(x, "ensembl_gene_id") %>%
+    x <- x %>%
+      set_rownames(rownames(.) %>% str_remove("^s-")) %>%
+      rownames_to_column("ensembl_gene_id")%>%
       left_join(metadata, by = "ensembl_gene_id") %>%
       filter(gene_name != "") %>%
       mutate(gene_name2 = snakecase::to_any_case(gene_name, case = "none", sep_in = NULL, unique_sep = "_") %>% str_replace("_1", " (2)")) %>%
@@ -37,4 +39,6 @@ join_metadata <- function(x, metadata = NULL) {
 }
 
 #' @export
-plot_bar_rgcca <- function(x, n_max = 15, ...) plot_bar(x, n_max = n_max, abs = TRUE, label_x = "value", threshold = 0, digits = 2, colour = "black", ...)
+plot_bar_rgcca <- function(x, n_max = 15, ...) {
+    plot_bar(x, n_max = n_max, abs = TRUE, label_x = "value", threshold = 0, digits = 2, colour = "black", ...)
+}
