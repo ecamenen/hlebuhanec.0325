@@ -22,6 +22,7 @@ knitr::opts_chunk$set(
 library(hlebuhanec.0325)
 library(sva)
 library(limma)
+library(DESeq2)
 ```
 
 ```{r}
@@ -36,14 +37,14 @@ rna_processed <- rna_raw %>%
     select(any_of(pull(metadata_rna, "Patient"))) %>%
    .[rowSums(. >= 10) >= 3, ]
 
-covar_mod <- model.matrix(~ Age + Sex, data = metadata_rna)
-
-counts_adj0 <- ComBat_seq(
-  counts    = as.matrix(rna_processed),
-  batch     = metadata_rna$Batch,
-  group     = NULL,
-  covar_mod = covar_mod
-)
+# covar_mod <- model.matrix(~ Age + Sex, data = metadata_rna)
+# counts_adj0 <- ComBat_seq(
+#   counts    = as.matrix(rna_processed),
+#   batch     = metadata_rna$Batch,
+#   group     = NULL,
+#   covar_mod = covar_mod
+# )
+counts_adj0 <- rna_processed
 
 couts_norm <- DESeqDataSetFromMatrix(countData = counts_adj0, colData = metadata_rna, design = ~1) %>%
   estimateSizeFactors() %>%
@@ -55,14 +56,19 @@ couts_norm2 <- DESeqDataSetFromMatrix(countData = rna_processed, colData = metad
   vst(blind = TRUE) %>%
   assay()
 
+idx <- which(metadata_rna$Group == "PN")
+metadata_rna2 <- metadata_rna[idx, ]
+
 counts_adj <- removeBatchEffect(
-  couts_norm,
-  batch      = metadata_rna$Sex,
-  covariates = metadata_rna$Age
+  couts_norm[, idx],
+  batch      = pull(metadata_rna2, "Sex")#,
+  # covariates = pull(metadata_rna2, "Age")
 )
 ```
 
 ```{r}
+library(rstatix)
+library(GimmeMyPlot)
 plot_pca <- function(m, title) {
   pc <- prcomp(t(m), scale. = FALSE)
   df <- data.frame(pc$x[, 1:2], batch = metadata_rna$Batch,
@@ -73,38 +79,13 @@ plot_pca <- function(m, title) {
     theme_minimal()
 }
 
-plot_pca0 <- function(m, var = "Sex") {
-  pca <- prcomp(t(m), scale. = FALSE)
-  pca_data <- pluck(pca, "x") %>%
-    as.data.frame() %>%
-    rownames_to_column("Patient") %>%
-    left_join(metadata_rna, by = "Patient")
-  
-  percentVar <- pca$sdev^2 / sum(pca$sdev^2)
-  
-  centroids <- pca_data %>%
-    group_by(!!sym(var)) %>%
-    summarise(PC1 = mean(PC1), PC2 = mean(PC2))
+plot_pca2(couts_norm2[, idx], metadata_rna2)
+plot_pca2(counts_adj, metadata_rna2)
+```
 
-ggplot(pca_data, aes(PC1, PC2, color = !!sym(var))) +
-  geom_point() +
-  stat_ellipse(aes(group = !!sym(var), color = !!sym(var))) +
-  geom_point(
-    data = centroids,
-    aes(PC1, PC2, color = !!sym(var)),
-    shape = 4, size = 5, stroke = 1.5
-  ) +
-  labs(
-    x = paste0("PC1: ", round(percentVar[1] * 100, 1), "% variance"),
-    y = paste0("PC2: ", round(percentVar[2] * 100, 1), "% variance")
-  ) +
-  theme_minimal() +
-  theme_custom() +
-  scale_color_discrete(type = palette_discrete())
-}
- 
-plot_pca0(couts_norm2)
-plot_pca0(counts_adj)
+```{r}
+counts_adj_pn <- counts_adj
+usethis::use_data(counts_adj_pn, overwrite = TRUE)
 ```
 
 ## Session information
