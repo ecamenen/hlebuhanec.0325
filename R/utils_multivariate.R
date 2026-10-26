@@ -101,6 +101,11 @@ plot_cor_circle <- function(
     y,
     comp =  seq(2),
     colour = brewer.pal(9, "Reds"),
+    n_max = 20,
+    force = 500,
+    metadata = NULL,
+    var_to_join = "ensembl_gene_id",
+    var_to_name = "gene_name",
     ...
     ) {
 
@@ -116,18 +121,46 @@ plot_cor_circle <- function(
     return(data.frame(x = xx, y = yy))
   }
 
+  x$ind$coord <- x$ind$coord[, comp]  %>%
+    as.data.frame()
+  y <- as.data.frame(y)
+
   print_comp <- function(x, i) paste0("Comp .", i, " (", round(x[i], 1), "%)")
   df <- correlate(y, x$ind$coord[, comp], method_adjust = "none", cutoff = 0) %>%
     pluck("r") %>%
     t() %>%
-    as.data.frame()
-df$strength <- sqrt(df[, 1]^2 + df[, 2]^2)
+    as.data.frame() %>%
+    set_colnames(c("V1", "V2")) %>%
+    filter(V1 != 0 | V2 != 0) %>%
+    mutate(
+      r1 = ifelse(V1 != 0, rank(-abs(V1)), NA),
+      r2 = ifelse(V2 != 0, rank(-abs(V2)), NA),
+      rank = rowMeans(cbind(r1, r2), na.rm = TRUE)
+    ) %>%
+    arrange(rank) %>%
+    head(n_max)
 
-  ggplot(df, aes(df[, 1], df[, 2])) +
+  if (!is.null(metadata)) {
+    df <- left_join(rownames_to_column(df, var_to_join), metadata) %>%
+      filter(!!sym(var_to_name) != "", !is.na(!!sym(var_to_name))) %>%
+      set_rownames(
+        pull(., var_to_name) %>%
+        snakecase::to_any_case( case = "none", sep_in = NULL, unique_sep = "_") %>%
+        str_replace("_1", " (2)") %>%
+        str_replace("_2", " (3)")
+      ) %>%
+      select(V1, V2)
+  }
+
+  df$strength <- sqrt(df[, 1]^2 + df[, 2]^2)
+
+  p <- ggplot(df, aes(df[, 1], df[, 2])) +
     geom_text_repel(
         aes(label = rownames(df), colour = strength),
         hjust = 0.5,
-        vjust = -1
+        vjust = -1,
+        force = force,
+        ...
       ) +
     geom_vline(xintercept = 0, linetype = "dashed", linewidth = 1) +
     geom_hline(yintercept = 0, linetype = "dashed", linewidth = 1) +
@@ -145,20 +178,24 @@ df$strength <- sqrt(df[, 1]^2 + df[, 2]^2)
       panel.border = element_blank()
     ) +
     scale_x_continuous(expand = expansion(mult = .1)) +
-    scale_y_continuous(expand = expansion(mult = .1)) +
-    geom_path(
-      aes(.data$x, .data$y),
-      data = get_circle(),
-      col = "black",
-      linewidth = 1
-    ) +
-    geom_path(
-      aes(.data$x, .data$y),
-      data = get_circle() / 2,
-      col = "black",
-      linewidth = 1,
-      linetype = "dashed"
-    )
+    scale_y_continuous(expand = expansion(mult = .1))
+
+  circles <- list(
+    list(diameter = 2,   linetype = "solid"),
+    list(diameter = 1,   linetype = "dashed"),
+    list(diameter = 1.5, linetype = "dotted")
+  )
+
+  p +
+    lapply(circles, \(c) {
+      geom_path(
+        aes(.data$x, .data$y),
+        data = get_circle(diameter = c$diameter),
+        col = "black",
+        linewidth = 1,
+        linetype = c$linetype
+      )
+    })
 }
 
 plot_ind_quant <- function(x, var, axes = seq(2), legend = "Score") {
