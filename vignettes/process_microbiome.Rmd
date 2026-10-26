@@ -1,0 +1,71 @@
+---
+title: "process_microbiome"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{process_microbiome}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(hlebuhanec.0325)
+library(GimmeMyStats)
+library(GimmeMyPlot)
+library(rlist)
+```
+
+```{r}
+data("microbiome_processed")
+data("metadata_microbiome")
+
+metadata_microbiome$sexe <- as.factor(metadata_microbiome$sexe)
+microbiome_processed <- microbiome_processed %>%
+  column_to_rownames("species")
+l_micro <- list(metadata = pull(metadata_microbiome, "patient"), counts = colnames(microbiome_processed))
+plot_venn(l_micro)
+
+common_ids <- intersect(l_micro[[1]], l_micro[[2]])
+```
+
+```{r}
+idx <- filter(metadata_microbiome, patient %in% common_ids & group == "PN") %>% pull("patient")
+microbiome_processed2 <- microbiome_processed[, idx]
+metadata_microbiome2 <- filter(metadata_microbiome, patient %in% idx,) %>%
+  rename(Patient = "patient")
+c("sexe", "age", "lectures_bacteriennes") %>%
+  list.map(~plot_pca2(microbiome_processed2, metadata_microbiome2, .))
+
+microbiome_adj_pn <- microbiome_processed2
+usethis::use_data(microbiome_adj_pn, overwrite = TRUE)
+```
+
+```{r}
+plot_bar_2cat(
+    select(metadata_microbiome, "sexe", "group"),
+    sort = c("HD", "DA", "PN")
+)
+library("ggrepel")
+vars <- c("age", "lectures_bacteriennes")
+metadata_microbiome0 <- rename(metadata_microbiome, groupe = "group")
+
+plot_violin_group(
+  metadata_microbiome0,
+  vars,
+  identity,
+  method = "wilcox",
+  display_log = TRUE
+)
+print_group_numeric(metadata_microbiome0, vars, identity)
+```
+
+## Session information
+```{r end, echo = FALSE}
+sessionInfo()
+```
