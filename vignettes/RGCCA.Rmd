@@ -91,6 +91,32 @@ plot_dimred(
 }
 )
 p
+
+df <- as.data.frame(a_rgcca$Y[[1]])
+data("clinic2")
+scores <- filter(clinic2, patient %in% rownames(df)) %>% left_join(rownames_to_column(df, "patient"), ., by = "patient") %>% pull(eva_prurit)
+
+scores <- metadata_microbiome %>%
+  filter(patient %in% rownames(df)) %>%
+  left_join(rownames_to_column(df, "patient"), ., by = "patient") %>% 
+  pull(lectures_bacteriennes )
+
+p <- list.map(
+  names(a_rgcca$blocks),
+f(x) ~{
+  as.data.frame(a_rgcca$Y[[x]]) %>%
+    mutate (var = scores) %>%
+plot_dimred(
+  paste("Comp.", seq(2)), 
+  a_rgcca$AVE$AVE_X[[x]] * 100, 
+  axis_text = TRUE, 
+  geom = "text",
+  legend = "EVA prurit",
+  colour = brewer.pal(6, "Reds")[-1]
+) + ggtitle(x)
+}
+)
+p
 ```
 
 
