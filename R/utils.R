@@ -270,6 +270,7 @@ plot_ctr_omics <- function(p, Y, colour = colGrp, n_max = Inf) {
     theme(panel.grid = element_blank())
 }
 
+#' @export
 plot_dimred <- function(
     coord,
     axis,
@@ -298,10 +299,11 @@ plot_dimred <- function(
       legend.title = element_text(size = 15, face = "bold.italic", color = "gray50"),
       legend.text = element_text(size = 13, color = "gray50")
     )
-  if (pull(coord, "var") %>% is.numeric()) {
+  if (pull(coord, "var") %>% is.numeric() && n_distinct(pull(coord, "var")) > 10) {
     p <- p + scale_color_gradientn(colors = c("darkblue", "#A6CEE3", "#FB9A99", "darkred"))
   } else {
     p <- p +
+      aes(color = factor(var)) +
       scale_color_manual(
         values = colour,
         na.value = brewer.pal(n = 8, name = "Set2")[6]
