@@ -10,7 +10,9 @@ get_cor_rgcca <- function(x, block = 1, comp = 1, cutoff = .5, metadata = NULL, 
     .[1, .[1, ] != 0] %>%
     enframe(name = "gene", value = "V1") %>%
     column_to_rownames("gene") %>%
-    join_metadata(metadata)
+    join_metadata(metadata) %>%
+    rownames_to_column("ID") %>%
+    pull(V1, name = "ID")
 }
 
 #' @export
