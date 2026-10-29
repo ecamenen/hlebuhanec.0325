@@ -138,7 +138,7 @@ metadata_superblock <- metadata_microbiome %>%
 # plot(a_rgcca, var_colors  = "red", type = "loadings", comp = 2)
 
 # Weights
-p <- list.map(
+res <- list.map(
   c(names(a_rgcca$blocks), rep("superblock", 2)),
   f(x, y) ~{
   if (y %in% c(1, 4))
@@ -147,19 +147,39 @@ p <- list.map(
     metadata <- metadata_rna
   else
     metadata <- metadata_superblock
-  list.map(seq(2), f(i) ~get_ctr_rgcca(a_rgcca, x, i, metadata = metadata) %>%
-    plot_bar_rgcca()
+  list.map(seq(2), f(i) ~get_ctr_rgcca(a_rgcca, x, i, metadata = metadata)
   )
     }
   )
+
+p <- list.map(
+  res,
+  f(x) ~{
+    list.map(x, ~plot_bar_rgcca(.))
+  }
+)
+
 p$Microbiome[[1]] | p$Microbiome[[2]]
 p$RNA[[1]] | p$RNA[[2]]
 p[[3]][[1]] | p[[3]][[2]]
 p[[4]][[1]] | p[[4]][[2]]
 p[[5]][[1]] | p[[5]][[2]]
 
+deg_weight <- list.map(
+  seq(2),
+  f(x) ~ list.map(
+    c(head, function(x, ...)
+      tail(x, ...) %>% rev()),
+    f(i) ~ sort(res[[3]][[x]]) %>%
+      i(100) %>% 
+      names() %>%
+      as.data.frame()
+  ) %>% list_cbind()
+) %>% list_cbind() %>%
+  set_colnames(paste("Comp", rep(seq(2), each = 2), c("Neg", "Pos")))
+
 # Loadings
-p <- list.map(
+res <- list.map(
   c(names(a_rgcca$blocks), rep("superblock", 2)), 
   f(x, y) ~{
   if (y %in% c(1, 4))
@@ -168,16 +188,35 @@ p <- list.map(
     metadata <- metadata_rna
   else
     metadata <- metadata_superblock
-  list.map(seq(2), f(i) ~get_cor_rgcca(a_rgcca, x, i, metadata = metadata, method_adjust = "none") %>%
-    plot_bar_rgcca()
+  list.map(seq(2), f(i) ~get_cor_rgcca(a_rgcca, x, i, metadata = metadata, method_adjust = "none")
   )
     }
   )
+
+p <- list.map(
+  res,
+  f(x) ~{
+    list.map(x, ~plot_bar_rgcca(.))
+  }
+)
 p$Microbiome[[1]] | p$Microbiome[[2]]
 p$RNA[[1]] | p$RNA[[2]]
 p[[3]][[1]] | p[[3]][[2]]
 p[[4]][[1]] | p[[4]][[2]]
 p[[5]][[1]] | p[[5]][[2]]
+
+deg_cor <- list.map(
+  seq(2),
+  f(x) ~ list.map(
+    c(head, function(x, ...)
+      tail(x, ...) %>% rev()),
+    f(i) ~ sort(res[[3]][[x]]) %>%
+      i(100) %>% 
+      names() %>%
+      as.data.frame()
+  ) %>% list_cbind()
+) %>% list_cbind() %>%
+  set_colnames(paste("Comp", rep(seq(2), each = 2), c("Neg", "Pos")))
 ```
 
 ### Corcircle plot
@@ -212,6 +251,12 @@ p <- list.map(
   }
 )
 p
+```
+
+## Save
+```{r}
+list(weights = deg_weight, correlation = deg_cor) %>%
+  omics2excel(file.path("deg_da.xlsx"), func = identity)
 ```
 
 ## Session information
