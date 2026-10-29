@@ -1,0 +1,137 @@
+---
+title: "clustering_multimodal"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{clustering_multimodal}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(hlebuhanec.0325)
+library(RGCCA)
+library(GimmeMyPlot)
+library(tidyverse)
+library(rlist)
+library(GimmeMyOmics)
+
+options(future.globals.maxSize = 2000 * 1024^2)
+options(ggrepel.max.overlaps = 1000)
+```
+
+## Data preparation
+```{r}
+data("microbiome_adj_pn")
+data("counts_adj_pn")
+
+l_name_omics <- list(RNA = colnames(counts_adj_pn), Microbiome = colnames(microbiome_adj_pn))
+plot_venn(l_name_omics)
+
+common_ids <- intersect(l_name_omics[[1]], l_name_omics[[2]])
+blocks <- list(Microbiome = microbiome_adj_pn, RNA = counts_adj_pn) %>%
+  list.map(t(.[, common_ids]) %>% as.matrix())
+
+lapply(blocks, dim)
+```
+
+## Analysis
+```{r}
+# a_rgcca <- rgcca(blocks, ncomp = rep(2, 2))
+a_rgcca <- rgcca(blocks, sparsity = c(1, .1), ncomp = rep(2, 2), method = "sgcca")
+```
+
+
+```{r}
+df <- Reduce(cbind, a_rgcca$Y) %>% as.data.frame() %>% set_colnames(paste0(rep(names(a_rgcca$blocks), each = 2), colnames(.)))
+
+data("clinic2")
+scores <- filter(clinic2, patient %in% rownames(df)) %>% left_join(rownames_to_column(df, "patient"), ., by = "patient") %>% pull(eva_prurit)
+```
+
+```{r}
+library(GimmeMyCluster)
+df_scaled <- scale(df)
+dist <- getDistance(df_scaled)
+a_cl <- run_clustering(dist)
+```
+
+```{r}
+cls <- extract_clusters(a_cl)$clusters
+```
+
+## QC
+```{r}
+sil <- getSilhouettePerPart(dist, cls) %>%
+  getMeanSilhouettePerPart()
+plotSilhouettePerPart(sil)
+optimal_k <- which.max(sil) + 1
+optimal_k
+cl <- cls[[optimal_k - 1]]
+table(cl)
+```
+
+```{r}
+sil_k <- getSilhouette(dist, cl)
+plotSilhouette(sil_k)
+sil_k[, optimal_k]  %>% .[which.min(.)]
+```
+
+
+```{r}
+heatMap(df_scaled, dist = dist, c = a_cl, cl = cl)
+```
+
+```{r}
+plotDendrogram(a_cl, cl, optimal_k)
+```
+
+```{r}
+blocks[[1]] %>%
+    getDiscriminantVariables(cl, optimal_k, 15) %>%
+    select(1) %>%
+    plot_bar_rgcca(width_text = 50)
+
+blocks[[2]] %>%
+    getDiscriminantVariables(cl, optimal_k, 15) %>%
+    rownames_to_column("ensembl_gene_id") %>%
+    left_join(metadata_rna) %>%
+    filter(gene_name != "") %>%
+    mutate(gene_name = set_name_rna(gene_name)) %>%
+    column_to_rownames("gene_name") %>%
+    select(2) %>%
+    plot_bar_rgcca()
+```
+
+```{r}
+plot_disc_per_cl <- function(x, cl, optimal_k, ...) {
+  p <- x %>%
+    as.data.frame() %>%
+    getCtrVar(cl, optimal_k) %>% 
+    multiply_by(100)
+  
+   list.map(
+    rownames(p),
+    f(x) ~t(p) %>%
+    as.data.frame() %>% 
+    arrange(desc(!!sym(x))) %>%
+    select(!!sym(x)) %>% 
+    plot_bar_rgcca(title = x, ...)
+  )
+}
+
+plot_disc_per_cl(blocks[[1]], cl, optimal_k, width_text = 50)
+plot_disc_per_cl(blocks[[2]], cl, optimal_k)
+```
+
+
+## Session information
+```{r end, echo = FALSE}
+sessionInfo()
+```
