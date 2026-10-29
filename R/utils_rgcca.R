@@ -33,11 +33,16 @@ join_metadata <- function(x, metadata = NULL) {
       rownames_to_column("ensembl_gene_id")%>%
       left_join(metadata, by = "ensembl_gene_id") %>%
       filter(gene_name != "") %>%
-      mutate(gene_name2 = snakecase::to_any_case(gene_name, case = "none", sep_in = NULL, unique_sep = "_") %>% str_replace("_1", " (2)")) %>%
+      mutate(gene_name2 = set_name_rna(gene_name)) %>%
       column_to_rownames("gene_name2") %>%
       select("V1")
   }
   x
+}
+
+#' @export
+set_name_rna <- function(x) {
+  snakecase::to_any_case(x, case = "none", sep_in = NULL, unique_sep = "_") %>% str_replace("_1", " (2)")
 }
 
 #' @export
