@@ -952,15 +952,20 @@ extract_main_modality <- function(df, col_groupe, threshold = 0.75) {
 
 
 #' @export
-plot_pca0 <- function(m, var = "Sex") {
+plot_pca0 <- function(
+    m,
+    metadata = metadata_rna,
+    var = "Sex",
+    log_base = NULL
+) {
 
   # PCA
   pca <- prcomp(t(m), scale. = FALSE)
 
   pca_data <- pca$x %>%
     as.data.frame() %>%
-    rownames_to_column("Patient") %>%
-    left_join(metadata_rna, by = "Patient")
+    tibble::rownames_to_column("Patient") %>%
+    dplyr::left_join(metadata, by = "Patient")
 
   if (!var %in% names(pca_data)) {
     stop("La variable '", var, "' n'existe pas dans pca_data.")
@@ -973,52 +978,44 @@ plot_pca0 <- function(m, var = "Sex") {
 
   if (is_numeric) {
 
-    # Variable numérique : séparation low / high à la médiane
-    med <- median(pca_data[[var]], na.rm = TRUE)
-
-    pca_data$.plot_group <- factor(
-      ifelse(pca_data[[var]] <= med, "low", "high"),
-      levels = c("low", "high")
-    )
-
     # Données longues pour les régressions
     pca_long <- pca_data %>%
-      select(all_of(var), PC1, PC2) %>%
-      pivot_longer(
+      dplyr::select(all_of(var), PC1, PC2) %>%
+      tidyr::pivot_longer(
         cols = c(PC1, PC2),
         names_to = "PC",
         values_to = "value"
       ) %>%
-      filter(
+      dplyr::filter(
         !is.na(.data[[var]]),
         is.finite(value),
         is.finite(.data[[var]])
       )
 
     # Régression linéaire pour chaque PC
-    test_formula <- reformulate(
+    test_formula <- stats::reformulate(
       var,
       response = "value"
     )
 
     stats <- pca_long %>%
-      group_by(PC) %>%
-      group_modify(~ {
+      dplyr::group_by(PC) %>%
+      dplyr::group_modify(~ {
         dat <- .x
 
         if (nrow(dat) < 3 ||
-            n_distinct(dat[[var]]) < 2) {
-          return(tibble(p = NA_real_))
+            dplyr::n_distinct(dat[[var]]) < 2) {
+          return(tibble::tibble(p = NA_real_))
         }
 
         fit <- stats::lm(test_formula, data = dat)
 
-        tibble(
+        tibble::tibble(
           p = summary(fit)$coefficients[2, 4]
         )
       }) %>%
-      ungroup() %>%
-      mutate(
+      dplyr::ungroup() %>%
+      dplyr::mutate(
         label = paste0(
           PC, " : régression, p = ",
           format.pval(p, digits = 3, eps = 0.001)
@@ -1031,13 +1028,13 @@ plot_pca0 <- function(m, var = "Sex") {
     pca_data$.plot_group <- as.factor(pca_data[[var]])
 
     pca_long <- pca_data %>%
-      select(.plot_group, PC1, PC2) %>%
+      dplyr::select(.plot_group, PC1, PC2) %>%
       tidyr::pivot_longer(
         cols = c(PC1, PC2),
         names_to = "PC",
         values_to = "value"
       ) %>%
-      filter(
+      dplyr::filter(
         !is.na(.plot_group),
         is.finite(value)
       )
@@ -1049,25 +1046,25 @@ plot_pca0 <- function(m, var = "Sex") {
     }
 
     test_fun <- if (n_groups == 2) {
-      wilcox_test
+      rstatix::wilcox_test
     } else {
-      kruskal_test
+      rstatix::kruskal_test
     }
 
     stats <- pca_long %>%
-      group_by(PC) %>%
-      group_modify(~ {
+      dplyr::group_by(PC) %>%
+      dplyr::group_modify(~ {
         dat <- .x
 
-        if (n_distinct(dat$.plot_group) < 2) {
-          return(tibble(p = NA_real_))
+        if (dplyr::n_distinct(dat$.plot_group) < 2) {
+          return(tibble::tibble(p = NA_real_))
         }
 
         test_fun(dat, value ~ .plot_group) %>%
-          select(p)
+          dplyr::select(p)
       }) %>%
-      ungroup() %>%
-      mutate(
+      dplyr::ungroup() %>%
+      dplyr::mutate(
         label = paste0(
           PC, " : ",
           if (n_groups == 2) "Wilcoxon" else "Kruskal-Wallis",
@@ -1080,46 +1077,27 @@ plot_pca0 <- function(m, var = "Sex") {
   # Sous-titre
   subtitle_text <- paste(stats$label, collapse = " | ")
 
-  # Centroïdes
-  centroids <- pca_data %>%
-    filter(
-      !is.na(.plot_group),
-      is.finite(PC1),
-      is.finite(PC2)
-    ) %>%
-    group_by(.plot_group) %>%
-    summarise(
-      PC1 = mean(PC1),
-      PC2 = mean(PC2),
-      .groups = "drop"
-    )
+  # Transformation utilisée uniquement pour les couleurs
+  pca_data$.color_value <- if (is_numeric) {
+    if (is.null(log_base)) {
+      pca_data[[var]]
+    } else {
+      log(pca_data[[var]], base = log_base)
+    }
+  } else {
+    pca_data$.plot_group
+  }
 
   # Graphique
-
-  p <- ggplot(
+  p <- ggplot2::ggplot(
     pca_data,
-    aes(PC1, PC2)
+    ggplot2::aes(PC1, PC2)
   ) +
-    geom_point(
-      aes(
-        color = if (is_numeric) .data[[var]] else .plot_group
-      ),
+    ggplot2::geom_point(
+      ggplot2::aes(color = .color_value),
       na.rm = TRUE
     ) +
-    stat_ellipse(
-      aes(group = .plot_group),
-      color = "black",
-      na.rm = TRUE
-    ) +
-    geom_point(
-      data = centroids,
-      aes(PC1, PC2),
-      color = "black",
-      shape = 4,
-      size = 5,
-      stroke = 1.5
-    ) +
-    labs(
+    ggplot2::labs(
       x = paste0(
         "PC1 : ", round(percentVar[1] * 100, 1),
         "% variance"
@@ -1131,26 +1109,54 @@ plot_pca0 <- function(m, var = "Sex") {
       subtitle = subtitle_text,
       color = var
     ) +
-    theme_minimal() +
+    ggplot2::theme_minimal() +
     theme_custom()
 
   if (is_numeric) {
-    p <- p +
-      scale_color_gradientn(
-        colours = rev(brewer.pal(11, "RdBu")),
-        name = var,
-        na.value = "grey70"
-      )
+
+    if (is.null(log_base)) {
+      p <- p +
+        ggplot2::scale_color_gradientn(
+          colours = rev(
+            RColorBrewer::brewer.pal(11, "RdBu")[-c(1, 11)]
+          ),
+          name = var,
+          na.value = "grey70"
+        )
+
+    } else {
+
+      # Graduations exprimées sur l'échelle originale
+      original_values <- pca_data[[var]]
+      original_values <- original_values[
+        is.finite(original_values) & original_values > 0
+      ]
+
+      breaks_original <- pretty(range(original_values), n = 5)
+      breaks_original <- breaks_original[breaks_original > 0]
+
+      p <- p +
+        ggplot2::scale_color_gradientn(
+          colours = rev(
+            RColorBrewer::brewer.pal(11, "RdBu")[-c(1, 11)]
+          ),
+          breaks = log(breaks_original, base = log_base),
+          labels = scales::label_number()(breaks_original),
+          name = var,
+          na.value = "grey70"
+        )
+    }
+
   } else {
     p <- p +
-      scale_color_discrete(
+      ggplot2::scale_color_discrete(
         type = palette_discrete()
       )
   }
 
-
   p
 }
+
 
 #' @export
 plot_pca2 <- function(m, metadata_rna, var = "Sex", id = "Patient") {
