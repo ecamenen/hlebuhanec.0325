@@ -83,7 +83,7 @@ plot_pca2(couts_norm2[, idx], metadata_rna2)
 plot_pca2(counts_adj, metadata_rna2)
 ```
 
-```{r}
+```{r, eval = TRUE}
 counts_adj_pn <- counts_adj
 usethis::use_data(counts_adj_pn, overwrite = TRUE)
 ```

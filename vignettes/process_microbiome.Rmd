@@ -22,6 +22,7 @@ library(rlist)
 ```
 
 ```{r}
+disease <- "da"
 data("microbiome_processed")
 data("metadata_microbiome")
 
@@ -35,7 +36,7 @@ common_ids <- intersect(l_micro[[1]], l_micro[[2]])
 ```
 
 ```{r}
-idx <- filter(metadata_microbiome, patient %in% common_ids & group == "PN") %>% pull("patient")
+idx <- filter(metadata_microbiome, patient %in% common_ids & group == str_to_upper(disease)) %>% pull("patient")
 microbiome_processed2 <- microbiome_processed[, idx]
 metadata_microbiome2 <- filter(metadata_microbiome, patient %in% idx,) %>%
   rename(Patient = "patient")
@@ -43,7 +44,10 @@ c("sexe", "age", "lectures_bacteriennes") %>%
   list.map(~plot_pca2(microbiome_processed2, metadata_microbiome2, .))
 
 microbiome_adj_pn <- microbiome_processed2
-usethis::use_data(microbiome_adj_pn, overwrite = TRUE)
+```
+
+```{r, eval = FALSE}
+usethis::use_data(microbiome_adj_da, overwrite = TRUE)
 ```
 
 ```{r}
@@ -52,7 +56,7 @@ plot_bar_2cat(
     sort = c("HD", "DA", "PN")
 )
 library("ggrepel")
-vars <- c("age", "lectures_bacteriennes")
+vars <- c("age", "lectures_bacteriennes", "part_scenarioA_%")
 metadata_microbiome0 <- rename(metadata_microbiome, groupe = "group")
 
 plot_violin_group(

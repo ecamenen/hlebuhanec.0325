@@ -28,14 +28,17 @@ options(ggrepel.max.overlaps = 1000)
 
 ## Data preparation
 ```{r}
-data("microbiome_adj_pn")
-data("counts_adj_pn")
+disease <- "da"
+microbiome_adj <- paste0("microbiome_adj_", disease)
+counts_adj <- paste0("counts_adj_", disease)
+data(list = microbiome_adj)
+data(list = counts_adj)
 
-l_name_omics <- list(RNA = colnames(counts_adj_pn), Microbiome = colnames(microbiome_adj_pn))
+l_name_omics <- list(RNA = colnames(get(counts_adj)), Microbiome = colnames(get(microbiome_adj)))
 plot_venn(l_name_omics)
 
 common_ids <- intersect(l_name_omics[[1]], l_name_omics[[2]])
-blocks <- list(Microbiome = microbiome_adj_pn, RNA = counts_adj_pn) %>%
+blocks <- list(Microbiome = get(microbiome_adj), RNA = get(counts_adj)) %>%
   list.map(t(.[, common_ids]) %>% as.matrix())
 
 lapply(blocks, dim)
