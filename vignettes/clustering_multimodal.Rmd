@@ -64,6 +64,35 @@ a_cl <- run_clustering(dist)
 
 ```{r}
 cls <- extract_clusters(a_cl)$clusters
+list.map(cls, as.character(.) %>% fct_count(prop = TRUE))
+```
+
+```{r}
+library(kableExtra)
+
+tab <- map2_dfr(
+    list.map(cls, as.character(.) %>% fct_count(prop = TRUE)),
+    seq_along(cls),
+    ~ mutate(.x, k = paste("k = ", .y + 1))
+) %>%
+    select(k, everything())
+
+grey_palette <- colorRampPalette(c("white", "black"))(100)
+
+tab %>%
+  kable(
+    format = "html",
+    col.names = c("k", "Cluster", "n", "Proportion"),
+    digits = 3,
+    align = "c"
+  ) %>%
+  kable_styling(full_width = FALSE) %>%
+  column_spec(
+    4,
+    background = grey_palette[round(tab$p * 99) + 1],
+    color = ifelse(tab$p > 0.5, "white", "black")
+  ) %>%
+  collapse_rows(columns = 1, valign = "middle")
 ```
 
 ## QC
