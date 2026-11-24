@@ -139,24 +139,55 @@ blocks[[2]] %>%
 ```
 
 ```{r}
-plot_disc_per_cl <- function(x, cl, optimal_k, ...) {
+func_format <- function(x) {
+  str_replace_all(x, "_", " ") %>%
+  str_to_sentence() %>%
+  str_replace_all("micro l", "\\(ml\\)") %>%
+  str_replace_all("mm3", "\\(mm3\\)")
+}
+
+block_clinic <- clinic2 %>%
+  slice(match(rownames(blocks[[1]]), patient)) %>%
+  select(where(is.numeric)) %>%
+  select(where(~ sum(!is.na(.x)) > 2)) %>%
+  select(-ipp)
+block_clinic2 <- block_clinic %>% 
+  mutate(
+    across(
+        where(is.numeric),
+        ~ replace(.x, is.na(.x), median(.x, na.rm = TRUE))
+    )
+) %>%
+  set_colnames(colnames(.) %>% func_format())
+
+plot_disc_per_cl <- function(x, cl, optimal_k, metadata = NULL, digits = 1, ...) {
   p <- x %>%
     as.data.frame() %>%
     getCtrVar(cl, optimal_k) %>% 
-    multiply_by(100)
+    multiply_by(100) %>%
+    round(digits)
   
    list.map(
     rownames(p),
-    f(x) ~t(p) %>%
+    f(i) ~t(p) %>%
     as.data.frame() %>% 
-    arrange(desc(!!sym(x))) %>%
-    select(!!sym(x)) %>% 
-    plot_bar_rgcca(title = x, ...)
+    arrange(desc(!!sym(i))) %>%
+    select(!!sym(i)) %>% 
+    head(15) %>%
+    set_colnames("V1") %>%
+    join_metadata(metadata) %>%
+    plot_bar_rgcca(title = i, ...)
   )
 }
 
-plot_disc_per_cl(blocks[[1]], cl, optimal_k, width_text = 50)
-plot_disc_per_cl(blocks[[2]], cl, optimal_k)
+p <- plot_disc_per_cl(blocks[[1]], cl, optimal_k, width_text = 50)
+p[[1]] | p[[2]]
+p[[3]] | p[[3]]
+p <- plot_disc_per_cl(block_clinic2, cl, optimal_k, width_text = 50, digits = 0)
+p[[1]] | p[[2]]
+p[[3]] | p[[3]]
+p <- plot_disc_per_cl(blocks[[2]], cl, optimal_k, metadata = metadata_rna)
+p[[1]] | p[[2]] | p[[3]]
 ```
 
 
